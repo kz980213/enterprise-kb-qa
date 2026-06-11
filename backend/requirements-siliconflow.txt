@@ -1,0 +1,62 @@
+# ══════════════════════════════════════════════════════════════
+# 生产依赖清单（MODEL_BACKEND=siliconflow）
+# ══════════════════════════════════════════════════════════════
+#
+# 适用场景：生产环境使用 SiliconFlow 远程 API 作为 Embedding / Reranker 后端。
+#
+# 与 pyproject.toml 的区别：
+#   ★ 故意省略 FlagEmbedding 和 torch（合计约 4 GB）
+#   ★ 省略 pymupdf（可选，仅 OCR 扫描件需要，可按需加回）
+#   siliconflow 模式下进程内永不加载本地模型，torch 不需要安装。
+#
+# 安装：
+#   pip install -r requirements-siliconflow.txt
+#
+# 验证无 torch：
+#   python -c "import torch" 2>&1 | grep -i "no module"
+#   python -c "import FlagEmbedding" 2>&1 | grep -i "no module"
+#
+# 注意：切换后端后建议重新入库（旧向量可能来自本地模型，
+#   虽然同款权重向量空间理论一致，但混库最干净的方式是清库重建）。
+# ══════════════════════════════════════════════════════════════
+
+# ── Web 框架 ──────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# ── 数据库 ────────────────────────────────────────────────────
+sqlalchemy>=2.0.30
+asyncpg>=0.29.0
+pgvector>=0.3.2
+
+# ── Pydantic ──────────────────────────────────────────────────
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+
+# ── 鉴权 ──────────────────────────────────────────────────────
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# ── 文档解析（不含 OCR 依赖的最小集）────────────────────────
+pypdf>=4.2.0          # PDF 文本层提取
+python-docx>=1.1.0    # Word 文档解析
+markdown-it-py>=3.0.0 # Markdown 解析
+Pillow>=10.3.0        # 图像处理基础库
+# pytesseract / pymupdf：扫描件 OCR 需要，可按需加回
+# 若生产环境有扫描件 PDF，执行：pip install pymupdf pytesseract
+
+# ── HTTP 客户端（SiliconFlow API 调用）────────────────────────
+# 注意：故意不安装 FlagEmbedding（拉取 torch ~3.5GB）
+# 和 torch（~500MB），siliconflow 模式仅通过 httpx 调用远程 API。
+httpx>=0.27.0
+
+# ── LLM 客户端（DeepSeek，OpenAI 兼容协议）───────────────────
+openai>=1.30.0
+
+# ── 可观测 ────────────────────────────────────────────────────
+langfuse>=2.36.0
+
+# ── 工具 ──────────────────────────────────────────────────────
+structlog>=24.2.0
+tenacity>=8.3.0
