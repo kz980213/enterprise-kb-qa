@@ -19,6 +19,9 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import type { Citation } from '@/types'
 
+// 与 src/api/index.ts 的 axios 实例保持一致
+const API_BASE = import.meta.env.VITE_API_BASE ?? ''
+
 export interface ChatCallbacks {
   onSession:  (sessionId: string) => void    // M1: 懒创建新会话
   onToken:    (text: string) => void
@@ -34,7 +37,7 @@ export async function streamChat(
   callbacks: ChatCallbacks,
   signal?: AbortSignal,
 ): Promise<void> {
-  await fetchEventSource('/api/v1/chat', {
+  await fetchEventSource(`${API_BASE}/api/v1/chat`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
