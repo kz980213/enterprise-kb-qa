@@ -107,11 +107,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "http://localhost:80",
-        "http://localhost:5173",  # Vite dev server
-    ],
+    # CORS_ORIGINS 逗号分隔字符串 → 列表；credentials=True 不允许 "*"
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

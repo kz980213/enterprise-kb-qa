@@ -19,6 +19,13 @@ class Settings(BaseSettings):
         case_sensitive=False,  # database_url ↔ DATABASE_URL
     )
 
+    # ── CORS ─────────────────────────────────────────────────
+    # 逗号分隔的允许域名列表，存为字符串（pydantic-settings v2 对 list[str] 字段会先尝试
+    # JSON-decode，导致逗号分隔的 env 值被 json.loads 炸掉）。main.py 在使用时 split 解析。
+    # allow_credentials=True 时不能用 "*"，必须明确列出域名。
+    # 示例：CORS_ORIGINS=https://your-app.vercel.app,http://localhost:5173
+    cors_origins: str = "http://localhost,http://localhost:80,http://localhost:5173"
+
     # ── 数据库 ────────────────────────────────────────────────
     database_url: str
 
