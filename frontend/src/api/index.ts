@@ -12,7 +12,9 @@ export function setApiToken(token: string | null): void {
   _currentToken = token
 }
 
-const api = axios.create({ baseURL: '/api/v1' })
+// VITE_API_BASE 未设时（本地开发）降到空字符串，Vite proxy 接管 /api/* 转发；
+// 生产部署（Vercel）需在环境变量中设 VITE_API_BASE=https://your-backend.onrender.com
+const api = axios.create({ baseURL: (import.meta.env.VITE_API_BASE ?? '') + '/api/v1' })
 
 api.interceptors.request.use((config) => {
   if (_currentToken) {
