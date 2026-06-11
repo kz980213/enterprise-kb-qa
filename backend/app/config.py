@@ -33,9 +33,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 480
 
     # ── Langfuse 可观测 ───────────────────────────────────────
-    langfuse_public_key: str
-    langfuse_secret_key: str
-    langfuse_host: str = "http://langfuse:3000"
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+    langfuse_host: str | None = None
 
     # ── 模型后端开关 ──────────────────────────────────────────
     # "local"        → 进程内加载 PyTorch 模型（开发 / 低流量部署）

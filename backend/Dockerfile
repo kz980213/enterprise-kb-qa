@@ -26,4 +26,4 @@ COPY . .
 # 单 worker 是硬性要求：
 #   bge-m3 约 2.3GB、reranker 约 568MB，多 worker 各自加载副本内存直接耗尽。
 #   生产横向扩展通过增加 Pod/容器数量实现，而非多 worker。
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", $PORT, "--workers", "1"]
