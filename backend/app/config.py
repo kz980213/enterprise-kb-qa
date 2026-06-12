@@ -74,12 +74,12 @@ class Settings(BaseSettings):
     rrf_k: int = 60             # RRF 融合平滑常数（原论文默认值）
 
     # ── 生成层 ────────────────────────────────────────────────
-    # rerank_threshold 双后端均适用：
-    #   · local（normalize=True）：sigmoid(logit) → [0,1]
-    #   · siliconflow：relevance_score ∈ [0,1]（官方文档明确，同款模型）
-    # 两种后端打分标度基本一致，0.15 无需为 siliconflow 单独调整。
-    # 若实测发现"结果全被拦截 or 放入低质结果"，可通过 RERANK_THRESHOLD 环境变量微调。
-    rerank_threshold: float = 0.15
+    # 兜底垃圾过滤阈值（极低，基本不拦）：
+    #   reranker 对所有 chunk 均低于此值才短路，不调用 LLM。
+    #   "有没有答案"由 LLM 依据参考资料自行判断（NO_CONTENT_REPLY 话术），
+    #   不依赖 rerank 绝对分数——SiliconFlow reranker 对概括型问题打分极低
+    #   （0.009~0.06），用高阈值做语义过滤会把有效答案误判为"无内容"。
+    rerank_threshold: float = 0.001
 
     # LLM 生成参数
     llm_temperature: float = 0.1      # 低温保证事实性输出

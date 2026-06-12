@@ -22,13 +22,16 @@ SSE 事件流结构（前端按 event type 区分处理）：
 
 设计说明：
   - citation 与 token 严格分离：不在文本流中插入 JSON 对象，避免前端解析复杂性。
-  - finish_reason="no_relevant_content" 表示 rerank 短路，此时不会有 token/citation 事件。
+  - finish_reason="no_relevant_content" 表示短路，此时不会有 token/citation 事件。
   - 整个生成过程不依赖 Langfuse（Phase 7 在 chat.py 层加入追踪）。
 
-reranker 阈值短路逻辑：
-  ranked_chunks 中最高 rerank_score < settings.rerank_threshold
-    → 直接 yield done(no_relevant_content)，不调用 DeepSeek API
-  这一判断在 LLM 调用之前发生，节省 API 费用，同时保证回答可信度。
+短路逻辑（仅兜底垃圾过滤，不做语义判断）：
+  1. ranked_chunks 为空（检索层无任何命中）→ 直接短路。
+  2. 最高 rerank_score < rerank_threshold（默认 0.001，极低）→ 短路。
+     该阈值只用于过滤 reranker 认为与任何内容均无关的噪音，
+     不做"是否有答案"的语义判断——那由 LLM 依据参考资料自行判断。
+  SiliconFlow reranker 对概括型问题打分普遍偏低（0.01~0.06），
+  如果用高阈值（0.15）做语义过滤，相关内容会被误判为"无内容"。
 """
 
 import json
@@ -136,8 +139,10 @@ async def stream_answer(
     流式生成回答，以 SSEEvent 序列异步产出。
 
     流程：
-      1. 阈值短路检查（ranked_chunks 为空 或 最高 rerank_score < threshold）
+      1. 兜底垃圾过滤（ranked_chunks 为空 或 最高 rerank_score < threshold）
          → 立即 yield no_content_stream()，不调用 DeepSeek
+         注：threshold 默认 0.001，极低，仅过滤无意义噪音；
+         "有没有答案"由 LLM 依据参考资料判断（NO_CONTENT_REPLY 话术）。
       2. 构建带参考资料的 prompt（M2: 含 history 历史轮次；M3: 含 memories 长期记忆）
       3. 调用 DeepSeek chat completions（stream=True）
          → 每个 token 产出一个 SSEEvent(type="token")
@@ -161,7 +166,9 @@ async def stream_answer(
     """
     threshold = rerank_threshold if rerank_threshold is not None else settings.rerank_threshold
 
-    # ── 阈值短路 ─────────────────────────────────────────────
+    # ── 兜底垃圾过滤（阈值默认 0.001，极低，基本不拦） ──────────
+    # 语义判断（"有没有答案"）交给 LLM：NO_CONTENT_REPLY 提示词约束其
+    # 在参考资料无相关内容时输出固定话术，不依赖 rerank 分数做决策。
     if not ranked_chunks:
         logger.info("ranked_chunks 为空，短路返回无内容")
         for event in _no_content_stream():
@@ -171,7 +178,7 @@ async def stream_answer(
     best_score = ranked_chunks[0].rerank_score  # 列表已按降序排列
     if best_score < threshold:
         logger.info(
-            "rerank 最高分低于阈值，短路返回无内容",
+            "rerank 最高分低于垃圾过滤阈值，短路返回无内容",
             best_score=best_score,
             threshold=threshold,
         )
