@@ -144,6 +144,11 @@ function stopStreaming() {
   sessions.abortCurrentStream()
 }
 
+function fillExample(text: string) {
+  inputText.value = text
+  nextTick(() => textareaRef.value?.focus())
+}
+
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
@@ -158,9 +163,30 @@ function handleKeydown(e: KeyboardEvent) {
     <div class="messages" ref="chatRef">
       <!-- 空状态 -->
       <div v-if="sessions.messages.length === 0" class="empty-state">
-        <div class="empty-icon">💬</div>
-        <p>向知识库提问，获取带引用的精准回答</p>
-        <p class="empty-hint">回答仅基于知识库内容，不会编造信息</p>
+        <!-- 人物头像 -->
+        <div class="avatar-wrap">
+          <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" class="avatar-svg">
+            <circle cx="40" cy="40" r="40" fill="var(--primary, #2563eb)" opacity="0.12"/>
+            <circle cx="40" cy="28" r="13" fill="var(--primary, #2563eb)" opacity="0.85"/>
+            <path d="M12 72 C12 54 28 46 40 46 C52 46 68 54 68 72" fill="var(--primary, #2563eb)" opacity="0.85"/>
+          </svg>
+        </div>
+
+        <!-- 欢迎文案 -->
+        <div class="greeting">
+          <p class="greeting-name">你好，我是「苏苏」，苏鹏科技集团公司的知识库小助手。</p>
+          <p class="greeting-desc">
+            我可以为你解答公司人事制度、财务流程、产品资料、行政规范、常见办事指引等问题，帮助你快速找到所需信息。
+          </p>
+          <p class="greeting-prompt">你可以直接向我提问，例如：</p>
+          <ul class="example-list">
+            <li @click="fillExample('差旅报销流程是什么？')">"差旅报销流程是什么？"</li>
+            <li @click="fillExample('新员工入职需要准备哪些材料？')">"新员工入职需要准备哪些材料？"</li>
+            <li @click="fillExample('某个产品的介绍资料在哪里？')">"某个产品的介绍资料在哪里？"</li>
+            <li @click="fillExample('请帮我查询财务报销相关规定。')">"请帮我查询财务报销相关规定。"</li>
+          </ul>
+          <p class="greeting-footer">有任何公司知识相关的问题，都可以来问我。</p>
+        </div>
       </div>
 
       <!-- 消息列表 -->
@@ -276,15 +302,73 @@ function handleKeydown(e: KeyboardEvent) {
 
 .empty-state {
   margin: auto;
-  text-align: center;
-  color: var(--text-muted);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 20px;
+  max-width: 520px;
+  width: 100%;
+  padding: 8px 4px;
 }
-.empty-icon { font-size: 48px; }
-.empty-hint { font-size: 12px; }
+
+/* 头像 */
+.avatar-wrap {
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+}
+.avatar-svg { width: 100%; height: 100%; }
+
+/* 欢迎文案区 */
+.greeting {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  color: var(--text);
+}
+.greeting-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.5;
+}
+.greeting-desc {
+  font-size: 14px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+.greeting-prompt {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.example-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.example-list li {
+  font-size: 13px;
+  color: var(--primary, #2563eb);
+  background: var(--primary-light, #eff6ff);
+  border: 1px solid color-mix(in srgb, var(--primary, #2563eb) 20%, transparent);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.example-list li:hover {
+  background: color-mix(in srgb, var(--primary, #2563eb) 15%, transparent);
+}
+.greeting-footer {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
 
 .message { display: flex; }
 .message.user { justify-content: flex-end; }
