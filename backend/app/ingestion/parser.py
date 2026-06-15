@@ -8,10 +8,11 @@
 供 chunker.py 做结构感知分块，最终写入 document_chunks 表的对应字段，
 是 Phase 4 引用对齐（citation.py）的溯源依据。
 
-OCR 路径依赖：
-  - 系统安装 tesseract-ocr（含 chi_sim + eng 语言包）
-  - Python 包 pymupdf（pip install pymupdf），仅用于 PDF → 图像渲染
-  若 PyMuPDF 未安装，文本层不足的页面会记录 warning 并跳过，其余页面正常解析。
+OCR 优先级（扫描件/图片页）：
+  1. Google Cloud Vision API（GOOGLE_VISION_API_KEY 有值时启用）
+     - 速度快（0.3-0.8s/页），准确率高，无本地内存开销
+  2. Tesseract（本地回退，Vision API 失败或未配置时使用）
+     - 需系统安装 tesseract-ocr + chi_sim + eng 语言包
 """
 
 import io
@@ -33,12 +34,43 @@ OnPageDone = Callable[[int, int], None]
 
 logger = structlog.get_logger()
 
-# PyMuPDF（fitz）：PDF 页面渲染为图像，可选但推荐安装
+# PyMuPDF（fitz）：PDF 文字提取 + 图像渲染（OCR 回退必需）
 try:
     import fitz as _pymupdf  # type: ignore[import-untyped]
     _HAS_PYMUPDF: bool = True
 except ImportError:
     _HAS_PYMUPDF = False
+
+# Google Cloud Vision API：可选，有 key 时替换 Tesseract
+try:
+    from google.cloud import vision as _gvision          # type: ignore[import-untyped]
+    from google.api_core.client_options import ClientOptions as _ClientOptions  # type: ignore[import-untyped]
+    _HAS_VISION_API: bool = True
+except ImportError:
+    _HAS_VISION_API = False
+
+_vision_client: Any = None   # 模块级单例，首次 OCR 时初始化
+
+
+def _get_vision_client(api_key: str) -> Any:
+    """返回 Vision API 客户端单例（线程安全：to_thread 单文件串行调用）。"""
+    global _vision_client
+    if _vision_client is None:
+        _vision_client = _gvision.ImageAnnotatorClient(
+            client_options=_ClientOptions(api_key=api_key)
+        )
+    return _vision_client
+
+
+def _ocr_page_vision(pix: Any, api_key: str) -> str:
+    """用 Vision API 对单页 Pixmap 做 OCR，返回识别文字。"""
+    client = _get_vision_client(api_key)
+    img_bytes: bytes = pix.tobytes("png")          # fitz Pixmap → PNG bytes，无需 PIL 转换
+    image = _gvision.Image(content=img_bytes)
+    response = client.document_text_detection(image=image)  # DOCUMENT 模式更适合密集排版
+    if response.error.message:
+        raise RuntimeError(f"Vision API error: {response.error.message}")
+    return response.full_text_annotation.text or ""
 
 
 # ──────────────────────────────────────────────────────────────
@@ -128,18 +160,24 @@ def _parse_pdf(
     on_page_done: OnPageDone | None = None,
 ) -> list[ParsedPage]:
     """
-    PDF 解析主流程（主路径：PyMuPDF C 层文本提取；OCR 回退：同一 doc 渲染 + Tesseract）
+    PDF 解析主流程
 
-    相比旧的 pypdf 主路径：
-    - 文本提取速度快 5-10x（C 底层 vs pypdf 纯 Python）
-    - 对 CJK 混排、嵌入字体、复杂布局的提取质量更好
-    - OCR 回退复用同一 fitz.Document 对象渲染，无需重复打开文件
+    文字提取：PyMuPDF C 层（5-10x 快于 pypdf）
+    OCR 回退（页面文字 < 50 字符）：
+      · Vision API 优先（key 已配置时）：0.3-0.8s/页，fitz Pixmap 直接转 PNG bytes
+      · Tesseract 回退（Vision API 未配置或调用失败时）
     """
     if not _HAS_PYMUPDF:
         raise RuntimeError(
             "PDF 解析需要 PyMuPDF（pip install pymupdf）；"
             "当前环境未安装，无法处理 PDF 文件。"
         )
+
+    # 读取 Vision API key（延迟导入，避免循环依赖）
+    _vision_api_key: str | None = None
+    if _HAS_VISION_API:
+        from app.config import settings  # noqa: PLC0415
+        _vision_api_key = settings.google_vision_api_key
 
     doc = _pymupdf.open(stream=file_bytes, filetype="pdf")
     total_pages = len(doc)
@@ -154,12 +192,27 @@ def _parse_pdf(
     for idx, raw_text in enumerate(raw_texts):
         text = _clean_text(_remove_noisy_lines(raw_text, noisy))
 
-        # 文本层不足（扫描件/图片页） → OCR 回退，复用已打开的 fitz doc
+        # 文本层不足（扫描件/图片页） → OCR
         if len(text) < _OCR_TRIGGER_CHARS:
-            logger.info("触发 OCR 回退", page=idx + 1, source=source)
             pix = doc[idx].get_pixmap(dpi=200)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            ocr_text: str = pytesseract.image_to_string(img, lang="chi_sim+eng")
+
+            if _vision_api_key:
+                # Vision API：直接把 fitz Pixmap 转 PNG bytes，无需经过 PIL
+                logger.info("OCR via Vision API", page=idx + 1, source=source)
+                try:
+                    ocr_text: str = _ocr_page_vision(pix, _vision_api_key)
+                except Exception as exc:
+                    logger.warning(
+                        "Vision API OCR 失败，回退 Tesseract",
+                        page=idx + 1, error=str(exc), source=source,
+                    )
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    ocr_text = pytesseract.image_to_string(img, lang="chi_sim+eng")
+            else:
+                logger.info("OCR via Tesseract", page=idx + 1, source=source)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                ocr_text = pytesseract.image_to_string(img, lang="chi_sim+eng")
+
             text = _clean_text(ocr_text)
 
         if not text:

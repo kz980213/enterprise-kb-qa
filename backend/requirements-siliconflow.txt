@@ -44,8 +44,11 @@ pypdf>=4.2.0          # PDF 文本层提取
 python-docx>=1.1.0    # Word 文档解析
 markdown-it-py>=3.0.0 # Markdown 解析
 Pillow>=10.3.0        # 图像处理基础库
-# pytesseract / pymupdf：扫描件 OCR 需要，可按需加回
-# 若生产环境有扫描件 PDF，执行：pip install pymupdf pytesseract
+# OCR 扫描件支持（三选一）：
+#   推荐：google-cloud-vision（10MB 客户端，无内存开销，速度最快）
+#   备选：pymupdf + pytesseract（本地，无网络依赖，但慢）
+pymupdf>=1.24.0
+google-cloud-vision>=3.7.0
 
 # ── HTTP 客户端（SiliconFlow API 调用）────────────────────────
 # 注意：故意不安装 FlagEmbedding（拉取 torch ~3.5GB）

@@ -30,8 +30,9 @@ dependencies = [
     "pypdf>=4.2.0",                 # PDF 文本层提取
     "pymupdf>=1.24.0",             # PDF → 图像渲染（扫描件 OCR 依赖，fitz 接口）
     "python-docx>=1.1.0",          # Word 文档解析
-    "pytesseract>=0.3.10",          # OCR（依赖系统 tesseract-ocr）
+    "pytesseract>=0.3.10",          # OCR 本地回退（依赖系统 tesseract-ocr）
     "Pillow>=10.3.0",               # 图像处理（OCR 前处理）
+    "google-cloud-vision>=3.7.0",   # Google Cloud Vision API OCR（扫描件加速）
     "markdown-it-py>=3.0.0",        # Markdown 解析
 
     # ── 嵌入与重排（进程内加载，单 worker） ──────────────────
@@ -85,8 +86,9 @@ module = [
     "ragas.*",
     "datasets.*",
     "pgvector.*",
-    "fitz.*",       # PyMuPDF：PDF 页面渲染
-    "docx.*",       # python-docx：无官方 stubs
+    "fitz.*",           # PyMuPDF：PDF 页面渲染
+    "docx.*",           # python-docx：无官方 stubs
+    "google.cloud.*",   # google-cloud-vision：无完整 stubs
     "markdown_it.*", # markdown-it-py：部分版本无完整 stubs
 ]
 ignore_missing_imports = true

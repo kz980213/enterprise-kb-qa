@@ -85,6 +85,12 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.1      # 低温保证事实性输出
     llm_max_tokens: int = 2048        # 单次问答最大输出 token 数
 
+    # ── OCR 后端（扫描件 PDF）────────────────────────────────────
+    # 优先级：Vision API（有 key）> Tesseract（本地回退）
+    # 申请：Google Cloud Console → 凭证 → 创建 API 密钥，限制至 Cloud Vision API
+    # Render 环境变量名：GOOGLE_VISION_API_KEY
+    google_vision_api_key: str | None = None
+
     # ── LibreOffice 文档转换（非 PDF → PDF，获取真实页码）──────
     soffice_path: str | None = None
     soffice_timeout: int = 60
