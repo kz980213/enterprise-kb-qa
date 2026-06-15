@@ -267,19 +267,25 @@ async def ingest_document_bg(
 
             log.info("Step 1: 解析文档")
             _parse_loop = asyncio.get_event_loop()
-            _last_parse_pct: list[int] = [0]   # list 让内层函数可写（避免 nonlocal）
+            _last_parse_pct: list[int] = [0]
+            # 串行化来自 to_thread 回调的 DB 写，防止多个 _set_stage 并发操作同一 session。
+            # to_thread 返回后用 `async with _parse_db_lock` 排空最后一次挂起的更新，
+            # 再继续写 stage="chunking"，避免交叉导致 SessionTransactionState 错误。
+            _parse_db_lock = asyncio.Lock()
+
+            async def _parse_progress_update(pages_done: int, total_pages: int) -> None:
+                async with _parse_db_lock:
+                    await _set_stage(db, doc_id, stage="parsing",
+                                     processed_chunks=pages_done, total_chunks=total_pages)
 
             def _on_parse_page(pages_done: int, total_pages: int) -> None:
-                # 运行在 to_thread 线程中，不能直接 await；
-                # 每 5% 触发一次 DB 更新，限制写频率（OCR 慢文件每页几十秒，无需限流；
-                # 快速文本 PDF 每页 <1ms，限流避免数百次 DB 写）。
+                # 运行在 to_thread 线程；每 5% 触发一次，限制 DB 写频率
                 new_pct = int(pages_done * 100 / total_pages) if total_pages else 0
                 if new_pct - _last_parse_pct[0] < 5 and pages_done < total_pages:
                     return
                 _last_parse_pct[0] = new_pct
                 asyncio.run_coroutine_threadsafe(
-                    _set_stage(db, doc_id, stage="parsing",
-                               processed_chunks=pages_done, total_chunks=total_pages),
+                    _parse_progress_update(pages_done, total_pages),
                     _parse_loop,
                 )
 
@@ -290,6 +296,10 @@ async def ingest_document_bg(
             )
             if not pages:
                 raise ValueError(f"文档 '{filename}' 解析结果为空，可能是空文件或格式不受支持")
+
+            # 排空所有挂起的进度更新，再推进到下一阶段
+            async with _parse_db_lock:
+                pass
 
             # ── Step 2: 分块（chunking 阶段）─────────────────────────────
             log.info("Step 2: 分块", pages=len(pages))
