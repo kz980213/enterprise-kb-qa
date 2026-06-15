@@ -87,6 +87,10 @@ const visibleDocs = computed(() => {
   return docs.value.filter(d => !queueDocIds.has(d.id))
 })
 
+// ── 重新上传（失败文档）─────────────────────────────────────
+const reuploadInputRef = ref<HTMLInputElement | null>(null)
+const reuploadingDoc   = ref<KBDocument | null>(null)
+
 // ── 权限编辑 ─────────────────────────────────────────────────
 const editingDoc      = ref<KBDocument | null>(null)
 const editTags        = ref<string[]>([])
@@ -422,6 +426,58 @@ async function handleDelete(docId: string, filename: string) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 重新上传失败文档
+// ─────────────────────────────────────────────────────────────
+
+function triggerReupload(doc: KBDocument) {
+  reuploadingDoc.value = doc
+  reuploadInputRef.value?.click()
+}
+
+async function onReuploadFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file  = input.files?.[0]
+  input.value = ''   // 重置，下次同文件名仍能触发
+  if (!file || !reuploadingDoc.value) return
+
+  const oldDoc = reuploadingDoc.value
+  reuploadingDoc.value = null
+
+  const localId = crypto.randomUUID()
+  uploadQueue.value.push({
+    localId,
+    filename:        file.name,
+    phase:           'uploading',
+    httpProgress:    0,
+    pipelinePercent: 0,
+    stageText:       '',
+    error:           '',
+  })
+
+  try {
+    const newDoc = await uploadDocument(
+      file,
+      oldDoc.acl_tags,
+      oldDoc.sensitivity_level,
+      (pct) => _updateQueue(localId, { httpProgress: pct }),
+    )
+    // 上传成功后删掉旧的失败记录
+    await deleteDocument(oldDoc.id)
+    await loadDocs()
+
+    _updateQueue(localId, {
+      phase:           'processing',
+      docId:           newDoc.id,
+      pipelinePercent: 2,
+      stageText:       '准备中…',
+    })
+    _startQueueItemPoll(newDoc.id, localId)
+  } catch (err: unknown) {
+    _updateQueue(localId, { phase: 'failed', error: _parseUploadError(err) })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // 辅助函数
 // ─────────────────────────────────────────────────────────────
 
@@ -476,6 +532,15 @@ function docPercent(doc: KBDocument): number {
 <template>
   <div class="doc-manager">
     <h2 class="panel-title">📚 文档管理</h2>
+
+    <!-- 重新上传用的隐藏文件输入（全局一个，复用） -->
+    <input
+      ref="reuploadInputRef"
+      type="file"
+      accept=".pdf,.docx,.doc,.md,.markdown,.txt"
+      class="hidden-input"
+      @change="onReuploadFileChange"
+    />
 
     <!-- ═══ 上传区 ═══════════════════════════════════════════ -->
     <div class="card">
@@ -698,6 +763,14 @@ function docPercent(doc: KBDocument): number {
           </div>
 
           <div class="doc-actions">
+            <button
+              v-if="doc.status === 'failed'"
+              class="btn-ghost reupload-btn"
+              title="重新选择文件上传（保留原有权限设置）"
+              @click="triggerReupload(doc)"
+            >
+              重新上传
+            </button>
             <button
               class="btn-ghost perm-btn"
               :disabled="doc.status !== 'done'"
@@ -1104,9 +1177,10 @@ function docPercent(doc: KBDocument): number {
   gap: 4px;
   flex-shrink: 0;
 }
-.perm-btn { font-size: 10px; padding: 3px 7px; }
+.reupload-btn { font-size: 10px; padding: 3px 7px; color: var(--primary, #2563eb); }
+.perm-btn     { font-size: 10px; padding: 3px 7px; }
 .perm-btn:disabled { opacity: .4; cursor: not-allowed; }
-.del-btn  { font-size: 10px; padding: 3px 7px; }
+.del-btn      { font-size: 10px; padding: 3px 7px; }
 
 /* ── 权限编辑模态框（Teleport to body）──────────────────── */
 .perm-overlay {
