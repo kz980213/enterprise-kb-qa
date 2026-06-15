@@ -82,9 +82,11 @@ from app.storage import get_storage
 logger = structlog.get_logger()
 
 # 向量化分批大小：动态计算（见 _embed_batch_size），此为最大批上限
-# SiliconFlow /embeddings 单次 input 硬限：32 条（官方文档 2025-06）；
-# 10 远低于上限，留足安全余量同时保持进度推送粒度足够细。
-_MAX_EMBED_BATCH = 10
+# SiliconFlow /embeddings 单次 input 硬限：32 条（官方文档 2025-06）。
+# local 后端受 PyTorch 内存影响，维持 10 较稳；
+# siliconflow 后端纯 HTTP，可用满 32（由 _embed_batch_size 按后端选择）。
+_MAX_EMBED_BATCH_LOCAL = 10
+_MAX_EMBED_BATCH_API   = 32
 
 # ──────────────────────────────────────────────────────────────
 # 并发安全锁
@@ -114,7 +116,7 @@ def _get_embed_semaphore() -> asyncio.Semaphore:
         if settings.model_backend == "local":
             concurrency = 1   # 串行：防止 PyTorch 模型并发推理导致数据竞争
         else:
-            concurrency = 4   # 并发：httpx 连接池管理 HTTP，semaphore 防止瞬时爆发
+            concurrency = 6   # 并发：httpx 连接池管理 HTTP，6 路并发平衡吞吐与 429 风险
         _embed_semaphore = asyncio.Semaphore(concurrency)
         logger.debug("embed semaphore 初始化", concurrency=concurrency, backend=settings.model_backend)
     return _embed_semaphore
@@ -126,14 +128,21 @@ def _get_embed_semaphore() -> asyncio.Semaphore:
 
 def _embed_batch_size(n_chunks: int) -> int:
     """
-    计算向量化批大小，目标约 20 次进度更新（保证进度条平滑）。
+    计算向量化批大小，目标约 10 个批次（gather 并发后进度更新已足够平滑）。
 
-    n=5   → batch=1 (5 次更新)
-    n=20  → batch=1 (20 次更新)
-    n=100 → batch=5 (20 次更新)
-    n=500 → batch=10 (50 次更新，上限 _MAX_EMBED_BATCH)
+    local 后端上限 10（PyTorch 内存约束）；siliconflow 上限 32（API 硬限）。
+
+    n=20  → batch=2  (10 批)
+    n=100 → batch=10 (10 批)
+    n=320 → batch=32 (10 批，siliconflow 上限)
+    n=500 → batch=32 (siliconflow) / 10 (local)
     """
-    return max(1, min(_MAX_EMBED_BATCH, math.ceil(n_chunks / 20)))
+    from app.config import settings
+    max_batch = (
+        _MAX_EMBED_BATCH_API if settings.model_backend == "siliconflow"
+        else _MAX_EMBED_BATCH_LOCAL
+    )
+    return max(1, min(max_batch, math.ceil(n_chunks / 10)))
 
 
 def _compute_percent(
@@ -272,36 +281,45 @@ async def ingest_document_bg(
             for chunk in chunks:
                 chunk.acl_tags = acl_tags
 
-            # ── Step 3: 向量化（embedding 阶段，分批推进进度）───────────
+            # ── Step 3: 向量化（embedding 阶段，asyncio.gather 并发批次）──
             #
             # ★ 并发安全关键点 ★
-            # local 后端：_embed_semaphore = Semaphore(1)，串行化所有 aencode() 调用，
-            #   防止多条流水线同时调用 PyTorch 模型（非线程安全）。
-            # siliconflow 后端：_embed_semaphore = Semaphore(4)，允许 4 批次并发 HTTP 调用，
-            #   提升多文档入库吞吐量；aencode() 内置重试可处理偶发 429。
+            # local 后端：Semaphore(1) 保证串行，防 PyTorch 数据竞争。
+            # siliconflow 后端：Semaphore(6) 允许 6 路并发 HTTP，大幅缩短单文档耗时：
+            #   改前：N 批串行，耗时 = N × 单批延迟
+            #   改后：ceil(N/6) 轮并发，耗时 = ceil(N/6) × 单批延迟（约 4-6x 加速）
             #
-            # acquire / release 不跨 batch 持有（批间释放），让其他文档的批次可插入。
+            # progress_lock：保证多个并发批次的进度更新不交错写同一 DB session。
+            # asyncio 单线程无真正竞态，lock 仅防止 await _set_stage 期间
+            # 另一批次也进入该段导致 SQLAlchemy session 操作交错。
             #
             n = len(chunks)
             batch_size = _embed_batch_size(n)
-            log.info("Step 3: 向量化开始", total_chunks=n, batch_size=batch_size)
+            log.info("Step 3: 向量化开始", total_chunks=n, batch_size=batch_size,
+                     batches=math.ceil(n / batch_size))
             await _set_stage(db, doc_id, stage="embedding", total_chunks=n, processed_chunks=0)
 
             texts = [c.content for c in chunks]
-            all_embeddings: list[Any] = []
+            batches = [texts[i : i + batch_size] for i in range(0, n, batch_size)]
 
-            for i in range(0, n, batch_size):
-                batch = texts[i : i + batch_size]
+            processed_count = 0
+            progress_lock = asyncio.Lock()
 
-                # acquire → aencode（受 semaphore 限制的并发）→ release
+            async def _embed_one_batch(batch: list[str]) -> list[Any]:
+                nonlocal processed_count
                 async with embed_sem:
                     embs = await embedder.aencode(batch)
+                # 进度更新串行化：同一 DB session 不允许并发 await
+                async with progress_lock:
+                    processed_count = min(processed_count + len(batch), n)
+                    await _set_stage(db, doc_id, processed_chunks=processed_count)
+                    log.debug("向量化进度", processed=processed_count, total=n)
+                return embs
 
-                all_embeddings.extend(embs)
-                processed = min(i + batch_size, n)
-                # 每批次 commit，前端轮询立即可见（commit 在锁外，不阻塞其他流水线）
-                await _set_stage(db, doc_id, processed_chunks=processed)
-                log.debug("向量化进度", processed=processed, total=n)
+            batch_results: list[list[Any]] = await asyncio.gather(
+                *[_embed_one_batch(b) for b in batches]
+            )
+            all_embeddings: list[Any] = [emb for result in batch_results for emb in result]
 
             # ── Step 4: 写库（storing 阶段）──────────────────────────────
             log.info("Step 4: 写库", chunks=n)
