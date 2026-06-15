@@ -460,7 +460,9 @@ function formatDate(iso: string): string {
 
 function docPercent(doc: KBDocument): number {
   switch (doc.stage) {
-    case 'parsing':   return 5
+    case 'parsing':   return doc.total_chunks > 0
+      ? Math.min(14, 2 + Math.floor(doc.processed_chunks * 12 / doc.total_chunks))
+      : 2
     case 'chunking':  return 15
     case 'embedding': return doc.total_chunks > 0
       ? Math.min(90, 20 + Math.floor(doc.processed_chunks * 70 / doc.total_chunks))

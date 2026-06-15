@@ -166,7 +166,9 @@ def _compute_percent(
     if stage is None:
         return 2
     if stage == "parsing":
-        return 5
+        if total_chunks == 0:
+            return 2
+        return min(14, 2 + int(processed_chunks * 12 / total_chunks))
     if stage == "chunking":
         return 15
     if stage == "embedding":
@@ -264,8 +266,27 @@ async def ingest_document_bg(
             parse_bytes, format_override = await convert_to_pdf_if_needed(file_bytes, filename)
 
             log.info("Step 1: 解析文档")
+            _parse_loop = asyncio.get_event_loop()
+            _last_parse_pct: list[int] = [0]   # list 让内层函数可写（避免 nonlocal）
+
+            def _on_parse_page(pages_done: int, total_pages: int) -> None:
+                # 运行在 to_thread 线程中，不能直接 await；
+                # 每 5% 触发一次 DB 更新，限制写频率（OCR 慢文件每页几十秒，无需限流；
+                # 快速文本 PDF 每页 <1ms，限流避免数百次 DB 写）。
+                new_pct = int(pages_done * 100 / total_pages) if total_pages else 0
+                if new_pct - _last_parse_pct[0] < 5 and pages_done < total_pages:
+                    return
+                _last_parse_pct[0] = new_pct
+                asyncio.run_coroutine_threadsafe(
+                    _set_stage(db, doc_id, stage="parsing",
+                               processed_chunks=pages_done, total_chunks=total_pages),
+                    _parse_loop,
+                )
+
             pages = await asyncio.to_thread(
-                parse_document, parse_bytes, filename, format_override=format_override
+                parse_document, parse_bytes, filename,
+                format_override=format_override,
+                on_page_done=_on_parse_page,
             )
             if not pages:
                 raise ValueError(f"文档 '{filename}' 解析结果为空，可能是空文件或格式不受支持")

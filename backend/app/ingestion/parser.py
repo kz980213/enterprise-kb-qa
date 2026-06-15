@@ -28,6 +28,9 @@ import structlog
 from markdown_it import MarkdownIt
 from PIL import Image
 
+# 类型别名：每页完成后 pipeline 注入的同步进度回调 (pages_done, total_pages)
+OnPageDone = Callable[[int, int], None]
+
 logger = structlog.get_logger()
 
 # PyMuPDF（fitz）：PDF 页面渲染为图像，可选但推荐安装
@@ -119,7 +122,11 @@ def _remove_noisy_lines(text: str, noisy: set[str]) -> str:
 _OCR_TRIGGER_CHARS = 50
 
 
-def _parse_pdf(file_bytes: bytes, source: str) -> list[ParsedPage]:
+def _parse_pdf(
+    file_bytes: bytes,
+    source: str,
+    on_page_done: OnPageDone | None = None,
+) -> list[ParsedPage]:
     """
     PDF 解析主流程（主路径：PyMuPDF C 层文本提取；OCR 回退：同一 doc 渲染 + Tesseract）
 
@@ -156,6 +163,8 @@ def _parse_pdf(file_bytes: bytes, source: str) -> list[ParsedPage]:
             text = _clean_text(ocr_text)
 
         if not text:
+            if on_page_done:
+                on_page_done(idx + 1, total_pages)
             continue
 
         result.append(ParsedPage(
@@ -165,6 +174,9 @@ def _parse_pdf(file_bytes: bytes, source: str) -> list[ParsedPage]:
             source=source,
             metadata={"total_pages": total_pages},
         ))
+
+        if on_page_done:
+            on_page_done(idx + 1, total_pages)
 
     return result
 
@@ -331,6 +343,7 @@ def parse_document(
     filename: str,
     *,
     format_override: str | None = None,
+    on_page_done: OnPageDone | None = None,
 ) -> list[ParsedPage]:
     """
     主入口：按扩展名分发解析器，返回 ParsedPage 列表。
@@ -343,6 +356,9 @@ def parse_document(
                          但 filename 保留原始名（如 "report.docx"），
                          此时传入 format_override=".pdf" 使分发器走 PDF 解析路径。
                          None（默认）= 按 filename 扩展名自动判断，与原有行为完全一致。
+        on_page_done:    每处理完一页后调用的同步回调 (pages_done, total_pages)。
+                         仅 PDF 解析路径支持；其他格式忽略此参数。
+                         pipeline 通过此回调将每页进度写入 DB，实现 parsing 阶段滚动进度。
 
     Returns:
         ParsedPage 列表；空文档返回空列表。
@@ -351,7 +367,6 @@ def parse_document(
     Raises:
         ValueError: 不支持的文件格式
     """
-    # format_override 优先；None 时退回到 filename 扩展名（向后兼容）
     suffix = format_override if format_override is not None else Path(filename).suffix.lower()
     parser_fn = _FORMAT_PARSERS.get(suffix)
     if parser_fn is None:
@@ -362,7 +377,13 @@ def parse_document(
     if format_override:
         log = log.bind(format_override=format_override)
     log.info("开始解析文档")
-    pages = parser_fn(file_bytes, filename)   # filename 作为 source，不传 format_override
+
+    # on_page_done 仅 PDF 路径支持；其他格式直接调用，不传回调
+    if suffix == ".pdf" and on_page_done is not None:
+        pages = parser_fn(file_bytes, filename, on_page_done=on_page_done)
+    else:
+        pages = parser_fn(file_bytes, filename)
+
     log.info("文档解析完成", pages=len(pages))
     return pages
 
