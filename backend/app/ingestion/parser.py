@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import pypdf
 import pytesseract
 import structlog
 from markdown_it import MarkdownIt
@@ -120,30 +119,26 @@ def _remove_noisy_lines(text: str, noisy: set[str]) -> str:
 _OCR_TRIGGER_CHARS = 50
 
 
-def _render_page_to_image(file_bytes: bytes, page_idx: int) -> Image.Image | None:
-    """
-    用 PyMuPDF 将 PDF 单页渲染为 PIL Image（200 DPI，适合 Tesseract 识别）。
-    page_idx: 0-based 页面索引。
-    """
-    if not _HAS_PYMUPDF:
-        return None
-    doc = _pymupdf.open(stream=file_bytes, filetype="pdf")
-    pix = doc[page_idx].get_pixmap(dpi=200)
-    return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-
 def _parse_pdf(file_bytes: bytes, source: str) -> list[ParsedPage]:
     """
-    PDF 解析主流程：
-    1. pypdf 提取文本层（速度快，大多数 PDF 够用）
-    2. 页眉/页脚检测并删除
-    3. 文本层不足 → PyMuPDF 渲染图像 → Tesseract OCR（chi_sim+eng）
-    """
-    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-    total_pages = len(reader.pages)
+    PDF 解析主流程（主路径：PyMuPDF C 层文本提取；OCR 回退：同一 doc 渲染 + Tesseract）
 
-    # 第一遍：批量提取原始文本（用于噪声行统计）
-    raw_texts = [reader.pages[i].extract_text() or "" for i in range(total_pages)]
+    相比旧的 pypdf 主路径：
+    - 文本提取速度快 5-10x（C 底层 vs pypdf 纯 Python）
+    - 对 CJK 混排、嵌入字体、复杂布局的提取质量更好
+    - OCR 回退复用同一 fitz.Document 对象渲染，无需重复打开文件
+    """
+    if not _HAS_PYMUPDF:
+        raise RuntimeError(
+            "PDF 解析需要 PyMuPDF（pip install pymupdf）；"
+            "当前环境未安装，无法处理 PDF 文件。"
+        )
+
+    doc = _pymupdf.open(stream=file_bytes, filetype="pdf")
+    total_pages = len(doc)
+
+    # 批量提取全部页面文本（C 底层，一次性读完比逐页 Python 调用快）
+    raw_texts: list[str] = [doc[i].get_text("text") for i in range(total_pages)]
     noisy = _detect_noisy_lines(raw_texts)
     if noisy:
         logger.debug("检测到页眉/页脚候选行", count=len(noisy), source=source)
@@ -152,19 +147,13 @@ def _parse_pdf(file_bytes: bytes, source: str) -> list[ParsedPage]:
     for idx, raw_text in enumerate(raw_texts):
         text = _clean_text(_remove_noisy_lines(raw_text, noisy))
 
-        # 扫描件检测：文本层不足则走 OCR 路径
+        # 文本层不足（扫描件/图片页） → OCR 回退，复用已打开的 fitz doc
         if len(text) < _OCR_TRIGGER_CHARS:
             logger.info("触发 OCR 回退", page=idx + 1, source=source)
-            img = _render_page_to_image(file_bytes, idx)
-            if img is None:
-                logger.warning(
-                    "PyMuPDF 未安装，OCR 跳过（安装：pip install pymupdf）",
-                    page=idx + 1,
-                    source=source,
-                )
-            else:
-                ocr_text: str = pytesseract.image_to_string(img, lang="chi_sim+eng")
-                text = _clean_text(ocr_text)
+            pix = doc[idx].get_pixmap(dpi=200)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            ocr_text: str = pytesseract.image_to_string(img, lang="chi_sim+eng")
+            text = _clean_text(ocr_text)
 
         if not text:
             continue
@@ -172,7 +161,6 @@ def _parse_pdf(file_bytes: bytes, source: str) -> list[ParsedPage]:
         result.append(ParsedPage(
             content=text,
             page_number=idx + 1,
-            # PDF 标题检测依赖字体元数据（pypdf 尚未支持），Phase 1 不实现
             section_title=None,
             source=source,
             metadata={"total_pages": total_pages},

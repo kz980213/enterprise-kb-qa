@@ -457,6 +457,18 @@ function fileIcon(ext: string): string { return TYPE_ICON[ext] ?? '📄' }
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
+
+function docPercent(doc: KBDocument): number {
+  switch (doc.stage) {
+    case 'parsing':   return 5
+    case 'chunking':  return 15
+    case 'embedding': return doc.total_chunks > 0
+      ? Math.min(90, 20 + Math.floor(doc.processed_chunks * 70 / doc.total_chunks))
+      : 20
+    case 'storing':   return 93
+    default:          return 2
+  }
+}
 </script>
 
 <template>
@@ -657,7 +669,7 @@ function formatDate(iso: string): string {
 
             <div class="doc-meta">
               <template v-if="doc.status === 'processing'">
-                <span class="status-badge processing">⏳ 入库中…</span>
+                <span class="status-badge processing">⏳ 入库中 {{ docPercent(doc) }}%</span>
               </template>
               <template v-else-if="doc.status === 'failed'">
                 <span class="status-badge failed" :title="doc.error_message ?? ''">
