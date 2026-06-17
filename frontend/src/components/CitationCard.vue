@@ -54,25 +54,36 @@ const shortName = computed(() => {
 .citation-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 7px 10px;
-  font-size: 12px;
+  gap: 10px;
+  background: var(--surface);
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12.5px;
   cursor: default;
-  transition: border-color .15s, box-shadow .15s;
-  max-width: 340px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  max-width: 400px;
+  min-width: 180px;
+  box-shadow: var(--shadow-sm);
 }
 .citation-card:hover {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--primary-light);
+  box-shadow: 0 0 0 3px var(--primary-subtle), var(--shadow-sm);
 }
 .marker {
-  font-weight: 700;
+  width: 24px;
+  height: 24px;
+  background: var(--primary-subtle);
   color: var(--primary);
+  border: 1px solid var(--primary-light);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 11px;
-  min-width: 22px;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-family: 'IBM Plex Mono', monospace;
 }
 .meta {
   flex: 1;
@@ -82,22 +93,36 @@ const shortName = computed(() => {
   gap: 2px;
 }
 .source {
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.detail { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sep { margin: 0 4px; }
+.detail {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sep { margin: 0 4px; color: var(--border-strong); }
 .score-bar {
-  width: 40px;
-  height: 4px;
+  width: 44px;
+  height: 5px;
   background: var(--border);
-  border-radius: 2px;
+  border-radius: 3px;
   flex-shrink: 0;
   overflow: hidden;
 }
-.score-fill { height: 100%; border-radius: 2px; transition: width .3s; }
-.score-label { font-size: 11px; font-weight: 600; min-width: 28px; text-align: right; flex-shrink: 0; }
+.score-fill { height: 100%; border-radius: 3px; transition: width .3s ease; }
+.score-label {
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 30px;
+  text-align: right;
+  flex-shrink: 0;
+  font-family: 'IBM Plex Mono', monospace;
+}
 </style>

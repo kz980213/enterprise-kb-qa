@@ -531,7 +531,6 @@ function docPercent(doc: KBDocument): number {
 
 <template>
   <div class="doc-manager">
-    <h2 class="panel-title">📚 文档管理</h2>
 
     <!-- 重新上传用的隐藏文件输入（全局一个，复用） -->
     <input
@@ -865,7 +864,7 @@ function docPercent(doc: KBDocument): number {
   gap: 14px;
 }
 .panel-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text);
   margin: 0;
@@ -873,20 +872,21 @@ function docPercent(doc: KBDocument): number {
 
 /* ── 区块卡片 ────────────────────────────────────────────── */
 .card {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  box-shadow: var(--shadow-sm);
 }
 .section-title {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 600;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: .06em;
+  text-transform: none;
+  letter-spacing: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1114,13 +1114,14 @@ function docPercent(doc: KBDocument): number {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
+  border-left: 3px solid transparent;
 }
-.doc-item.doc-processing { border-left: 3px solid #3b82f6; }
-.doc-item.doc-failed     { border-left: 3px solid #ef4444; background: #fff5f5; }
+.doc-item.doc-processing { border-left-color: var(--primary-mid); }
+.doc-item.doc-failed     { border-left-color: var(--danger); background: #fff8f8; }
 
 .doc-icon { font-size: 16px; flex-shrink: 0; margin-top: 2px; }
 .doc-info {
@@ -1195,11 +1196,12 @@ function docPercent(doc: KBDocument): number {
 }
 .perm-modal {
   background: var(--surface, #fff);
-  border-radius: 10px;
-  padding: 20px;
-  width: 340px;
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 380px;
   max-width: 100%;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, .2);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   gap: 14px;

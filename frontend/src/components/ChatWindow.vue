@@ -1,23 +1,7 @@
 <script setup lang="ts">
 /**
  * ChatWindow — 流式对话 + 引用卡片跳转 + 常用语快速填充
- *
- * M1 Bug Fix：
- *   - 移除 watch(sessions.currentId) → abortCtrl.abort()（原主犯 Bug）
- *   - 移除组件级 abortCtrl / isLoading 单例
- *   - sendMessage / stopStreaming 全部委托给 sessions store
- *   - store 的 messages computed 自动反映当前 session 的流状态，
- *     切换 session 只改 currentId，不 abort 任何在途流
- *
- * 常用语集成：
- *   - 输入框左侧新增 ⚡ 按钮，点击弹出 QuickPhrasesPanel 浮层
- *   - QuickPhrasesPanel emit('fill', content) → fillFromPhrase()
- *     → 将内容写入 inputText，聚焦 textarea，关闭面板（不发送）
- *   - 面板外点击（透明背景层 .qp-backdrop）触发关闭
- *
- * 滚动策略：
- *   - 每个 token 到达时（messages 内容变化）自动滚到底部
- *   - 切换会话时滚到底部（显示该 session 的历史消息底部）
+ * 居中布局：消息列表和输入栏限制最大宽度 760px，水平居中。
  */
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { marked } from 'marked'
@@ -40,22 +24,12 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 // ── 常用语面板开关 ────────────────────────────────────────────
 const phrasePanelOpen = ref(false)
 
-function openPhrasePanel() {
-  phrasePanelOpen.value = true
-}
+function openPhrasePanel() { phrasePanelOpen.value = true }
+function closePhrasePanel() { phrasePanelOpen.value = false }
 
-function closePhrasePanel() {
-  phrasePanelOpen.value = false
-}
-
-/**
- * 填充常用语内容到输入框（不发送）。
- * 由 QuickPhrasesPanel emit('fill') 触发。
- */
 function fillFromPhrase(content: string) {
   inputText.value = content
   closePhrasePanel()
-  // 聚焦并将光标移到末尾，用户可继续编辑
   nextTick(() => {
     const el = textareaRef.value
     if (el) {
@@ -71,13 +45,8 @@ function scrollToBottom() {
   if (el) el.scrollTop = el.scrollHeight
 }
 
-// 切换会话时滚到底部（不 abort 任何流）
-watch(
-  () => sessions.currentId,
-  () => nextTick(scrollToBottom),
-)
+watch(() => sessions.currentId, () => nextTick(scrollToBottom))
 
-// token 到达时滚到底部：跟踪消息数 + 最后一条消息的内容长度
 watch(
   () => {
     const msgs = sessions.messages
@@ -87,8 +56,6 @@ watch(
   () => nextTick(scrollToBottom),
 )
 
-// ── 预加载常用语列表 ──────────────────────────────────────────
-// 仅在 store 为空时拉取（已有数据时无需重复请求）
 onMounted(() => {
   if (quickPhrases.items.length === 0) {
     quickPhrases.fetchList().catch(() => {})
@@ -99,9 +66,7 @@ onMounted(() => {
 function renderContent(msg: Message): string {
   if (msg.isStreaming) {
     return msg.content
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/\n/g, '<br>')
   }
   const html = marked.parse(msg.content) as string
@@ -117,7 +82,7 @@ function renderContent(msg: Message): string {
   return DOMPurify.sanitize(withCites, { ADD_ATTR: ['data-n', 'data-msg'] })
 }
 
-// ── 引用点击（event delegation）────────────────────────────
+// ── 引用点击 ─────────────────────────────────────────────────
 function handleContentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target.classList.contains('cite-ref')) return
@@ -130,19 +95,15 @@ function handleContentClick(e: MouseEvent) {
   setTimeout(() => card?.classList.remove('highlight'), 1200)
 }
 
-// ── 发送消息（委托给 store，store 负责完整 SSE 驱动） ────────
+// ── 发送 / 停止 ──────────────────────────────────────────────
 async function sendMessage() {
   const query = inputText.value.trim()
   if (!query || sessions.isStreaming) return
-
   inputText.value = ''
   await sessions.sendMessage(query, auth.token ?? '')
 }
 
-// ── 停止（仅停止当前显示 session 的流，其他 session 不受影响） ─
-function stopStreaming() {
-  sessions.abortCurrentStream()
-}
+function stopStreaming() { sessions.abortCurrentStream() }
 
 function fillExample(text: string) {
   inputText.value = text
@@ -159,33 +120,23 @@ function handleKeydown(e: KeyboardEvent) {
 
 <template>
   <div class="chat-window">
-    <!-- 消息列表（直接读 sessions.messages computed，切换/流式自动更新） -->
+    <!-- 消息列表 -->
     <div class="messages" ref="chatRef">
       <!-- 空状态 -->
       <div v-if="sessions.messages.length === 0" class="empty-state">
-        <!-- 人物头像 -->
-        <div class="avatar-wrap">
-          <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" class="avatar-svg">
-            <circle cx="40" cy="40" r="40" fill="var(--primary, #2563eb)" opacity="0.12"/>
-            <circle cx="40" cy="28" r="13" fill="var(--primary, #2563eb)" opacity="0.85"/>
-            <path d="M12 72 C12 54 28 46 40 46 C52 46 68 54 68 72" fill="var(--primary, #2563eb)" opacity="0.85"/>
-          </svg>
-        </div>
-
-        <!-- 欢迎文案 -->
+        <div class="avatar-brand">苏</div>
         <div class="greeting">
-          <p class="greeting-name">你好，我是「苏苏」，苏鹏科技集团公司的知识库小助手。</p>
+          <p class="greeting-name">你好，我是「苏苏」，苏鹏科技集团公司的知识库助手。</p>
           <p class="greeting-desc">
-            我可以为你解答公司人事制度、财务流程、产品资料、行政规范、常见办事指引等问题，帮助你快速找到所需信息。
+            我可以解答公司人事制度、财务流程、产品资料、行政规范等问题，帮你快速找到所需信息。
           </p>
           <p class="greeting-prompt">你可以直接向我提问，例如：</p>
           <ul class="example-list">
-            <li @click="fillExample('差旅报销流程是什么？')">"差旅报销流程是什么？"</li>
-            <li @click="fillExample('新员工入职需要准备哪些材料？')">"新员工入职需要准备哪些材料？"</li>
-            <li @click="fillExample('某个产品的介绍资料在哪里？')">"某个产品的介绍资料在哪里？"</li>
-            <li @click="fillExample('请帮我查询财务报销相关规定。')">"请帮我查询财务报销相关规定。"</li>
+            <li @click="fillExample('差旅报销流程是什么？')">→ 差旅报销流程是什么？</li>
+            <li @click="fillExample('新员工入职需要准备哪些材料？')">→ 新员工入职需要准备哪些材料？</li>
+            <li @click="fillExample('某个产品的介绍资料在哪里？')">→ 某个产品的介绍资料在哪里？</li>
+            <li @click="fillExample('请帮我查询财务报销相关规定。')">→ 请帮我查询财务报销相关规定。</li>
           </ul>
-          <p class="greeting-footer">有任何公司知识相关的问题，都可以来问我。</p>
         </div>
       </div>
 
@@ -196,12 +147,10 @@ function handleKeydown(e: KeyboardEvent) {
         :class="['message', msg.role]"
       >
         <div class="bubble">
-          <!-- 用户消息 -->
           <template v-if="msg.role === 'user'">
             <p class="user-text">{{ msg.content }}</p>
           </template>
 
-          <!-- 助手消息 -->
           <template v-else>
             <div
               class="assistant-content"
@@ -209,11 +158,9 @@ function handleKeydown(e: KeyboardEvent) {
               v-html="renderContent(msg)"
               @click="handleContentClick"
             ></div>
-
             <span v-if="msg.isStreaming" class="cursor">▌</span>
-
             <div v-if="!msg.isStreaming && msg.citations.length" class="citations">
-              <p class="citations-label">📎 参考来源</p>
+              <p class="citations-label">参考来源</p>
               <div class="citations-grid">
                 <CitationCard
                   v-for="(cite, i) in msg.citations"
@@ -228,13 +175,8 @@ function handleKeydown(e: KeyboardEvent) {
       </div>
     </div>
 
-    <!--
-      输入区包装层（position: relative）
-      · QuickPhrasesPanel 绝对定位于此，浮在输入框上方
-      · 透明背景层 .qp-backdrop 覆盖全屏，点击关闭面板
-    -->
+    <!-- 输入区 -->
     <div class="input-area-wrapper">
-      <!-- 常用语面板（浮层，浮于输入框上方） -->
       <QuickPhrasesPanel
         v-if="phrasePanelOpen"
         class="phrase-panel"
@@ -242,32 +184,26 @@ function handleKeydown(e: KeyboardEvent) {
         @close="closePhrasePanel"
       />
 
-      <!-- 输入栏 -->
       <div class="input-bar">
-        <!-- 常用语入口按钮 -->
         <button
           class="btn-ghost phrase-trigger"
           :class="{ active: phrasePanelOpen }"
           @click="phrasePanelOpen ? closePhrasePanel() : openPhrasePanel()"
-          title="常用语（快速填充输入框）"
+          title="常用语"
         >⚡</button>
 
         <textarea
           ref="textareaRef"
           v-model="inputText"
           class="input-textarea"
-          placeholder="输入问题…（Enter 发送，Shift+Enter 换行）"
+          placeholder="输入问题… （Enter 发送，Shift+Enter 换行）"
           rows="1"
           :disabled="sessions.isStreaming"
           @keydown="handleKeydown"
         ></textarea>
+
         <div class="input-actions">
-          <button
-            v-if="sessions.isStreaming"
-            class="btn-danger"
-            @click="stopStreaming"
-            title="停止生成"
-          >停止</button>
+          <button v-if="sessions.isStreaming" class="btn-danger" @click="stopStreaming">停止</button>
           <button
             v-else
             class="btn-primary"
@@ -278,71 +214,80 @@ function handleKeydown(e: KeyboardEvent) {
       </div>
     </div>
 
-    <!-- 透明背景层：点击时关闭常用语面板（位于面板 z-index 之下） -->
-    <div
-      v-if="phrasePanelOpen"
-      class="qp-backdrop"
-      @click="closePhrasePanel"
-    ></div>
+    <!-- 关闭常用语面板的背景层 -->
+    <div v-if="phrasePanelOpen" class="qp-backdrop" @click="closePhrasePanel"></div>
   </div>
 </template>
 
 <style scoped>
 .chat-window { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
+/* ── 消息列表 ── */
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 16px;
+  padding: 28px 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
   scroll-behavior: smooth;
 }
 
+/* ── 空状态 ── */
 .empty-state {
   margin: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 20px;
-  max-width: 520px;
+  max-width: 560px;
   width: 100%;
-  padding: 8px 4px;
+  padding: 8px 24px;
 }
 
-/* 头像 */
-.avatar-wrap {
-  width: 80px;
-  height: 80px;
+/* 品牌 logo 头像 */
+.avatar-brand {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(140deg, var(--primary) 0%, var(--primary-mid) 100%);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 700;
+  color: #fff;
+  box-shadow: var(--shadow-md), 0 0 0 4px var(--primary-subtle);
   flex-shrink: 0;
 }
-.avatar-svg { width: 100%; height: 100%; }
 
-/* 欢迎文案区 */
+/* 欢迎文案 */
 .greeting {
   display: flex;
   flex-direction: column;
   gap: 10px;
   text-align: left;
   color: var(--text);
+  width: 100%;
 }
 .greeting-name {
-  font-size: 16px;
+  font-size: 15.5px;
   font-weight: 600;
   color: var(--text);
   line-height: 1.5;
 }
 .greeting-desc {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--text-muted);
-  line-height: 1.7;
+  line-height: 1.75;
 }
 .greeting-prompt {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
   margin-bottom: 2px;
 }
+
+/* 示例问题 */
 .example-list {
   margin: 0;
   padding: 0;
@@ -353,43 +298,50 @@ function handleKeydown(e: KeyboardEvent) {
 }
 .example-list li {
   font-size: 13px;
-  color: var(--primary, #2563eb);
-  background: var(--primary-light, #eff6ff);
-  border: 1px solid color-mix(in srgb, var(--primary, #2563eb) 20%, transparent);
-  border-radius: 8px;
-  padding: 6px 12px;
+  color: var(--primary);
+  background: var(--primary-subtle);
+  border: 1px solid var(--primary-light);
+  border-radius: var(--radius-sm);
+  padding: 7px 13px;
   cursor: pointer;
-  transition: background .15s;
+  transition: background var(--transition), border-color var(--transition),
+              transform var(--transition);
 }
 .example-list li:hover {
-  background: color-mix(in srgb, var(--primary, #2563eb) 15%, transparent);
-}
-.greeting-footer {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-top: 2px;
+  background: var(--primary-light);
+  border-color: var(--primary);
+  transform: translateX(3px);
 }
 
-.message { display: flex; }
+/* ── 消息气泡 ── */
+.message {
+  display: flex;
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 24px;
+}
 .message.user { justify-content: flex-end; }
 .message.assistant { justify-content: flex-start; }
 
 .bubble {
-  max-width: 75%;
-  border-radius: 12px;
-  padding: 12px 15px;
-  line-height: 1.65;
+  max-width: 78%;
+  border-radius: var(--radius);
+  padding: 11px 15px;
+  line-height: 1.7;
   word-break: break-word;
+  font-size: 14px;
 }
 .message.user .bubble {
   background: var(--primary);
   color: #fff;
-  border-bottom-right-radius: 4px;
+  border-radius: var(--radius) var(--radius) var(--radius-sm) var(--radius);
+  box-shadow: var(--shadow-sm);
 }
 .message.assistant .bubble {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius) var(--radius) var(--radius) var(--radius-sm);
   box-shadow: var(--shadow);
 }
 
@@ -403,16 +355,25 @@ function handleKeydown(e: KeyboardEvent) {
 .assistant-content :deep(ul),
 .assistant-content :deep(ol) { margin: 6px 0 6px 18px; }
 .assistant-content :deep(code) {
-  background: var(--bg); border-radius: 4px; padding: 1px 5px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+  font-size: 12.5px;
 }
 .assistant-content :deep(pre) {
-  background: var(--bg); border-radius: 8px; padding: 10px 14px;
-  overflow-x: auto; margin: 8px 0;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  overflow-x: auto;
+  margin: 8px 0;
+  border: 1px solid var(--border-subtle);
 }
 .assistant-content :deep(blockquote) {
-  border-left: 3px solid var(--primary); margin: 8px 0;
-  padding-left: 12px; color: var(--text-muted);
+  border-left: 3px solid var(--primary);
+  margin: 8px 0;
+  padding-left: 12px;
+  color: var(--text-muted);
 }
 .assistant-content.streaming { white-space: pre-wrap; }
 
@@ -425,58 +386,70 @@ function handleKeydown(e: KeyboardEvent) {
 }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
-.citations { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
-.citations-label { font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+.citations {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 10px;
+}
+.citations-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: none;
+  letter-spacing: .04em;
+}
 .citations-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 
 :global(.citation-card.highlight) {
   border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px var(--primary-light) !important;
+  box-shadow: 0 0 0 3px var(--primary-subtle) !important;
   animation: pop .4s ease;
 }
 @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.03)} 100%{transform:scale(1)} }
 
-/* ── 输入区包装层（常用语面板的定位参考） ───────────────────── */
+/* ── 输入区 ── */
 .input-area-wrapper {
   position: relative;
   flex-shrink: 0;
+  background: var(--surface);
+  border-top: 1.5px solid var(--border);
+  box-shadow: 0 -2px 8px rgba(17,24,39,.04);
 }
 
-/* ── 常用语浮层（绝对定位，浮于输入框正上方） ─────────────────── */
+/* 常用语浮层（绝对定位于 input-area-wrapper） */
 .phrase-panel {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  left: 24px;
   z-index: 51;
   width: 340px;
-  max-width: calc(100% - 16px);
+  max-width: calc(100% - 48px);
 }
 
-/* ── 输入栏 ─────────────────────────────────────────────────── */
 .input-bar {
-  padding: 12px 16px;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12px 24px;
   display: flex;
   gap: 10px;
   align-items: flex-end;
 }
 
-/* 常用语触发按钮 */
 .phrase-trigger {
-  font-size: 16px;
+  font-size: 15px;
   padding: 6px 9px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
-  transition: background .15s, color .15s;
   color: var(--text-muted);
   align-self: flex-end;
   margin-bottom: 1px;
+  transition: background var(--transition), color var(--transition);
 }
-.phrase-trigger:hover { color: var(--primary); background: var(--primary-light, #eff6ff); }
+.phrase-trigger:hover { color: var(--primary); background: var(--primary-subtle); }
 .phrase-trigger.active {
   color: var(--primary);
-  background: var(--primary-light, #eff6ff);
+  background: var(--primary-light);
   border-color: var(--primary);
 }
 
@@ -491,11 +464,10 @@ function handleKeydown(e: KeyboardEvent) {
 }
 .input-actions { display: flex; gap: 6px; }
 
-/* ── 全屏透明背景层（点击关闭面板） ────────────────────────── */
 .qp-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;   /* 面板 z-index 51，背景层 50 */
+  z-index: 50;
   background: transparent;
 }
 </style>

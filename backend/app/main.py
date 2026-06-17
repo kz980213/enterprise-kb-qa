@@ -76,7 +76,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             model=settings.reranker_model,
             device=settings.embedding_device,
         )
-        init_reranker(model_name=settings.reranker_model, device=settings.embedding_device)
+        try:
+            init_reranker(model_name=settings.reranker_model, device=settings.embedding_device)
+        except (OSError, MemoryError, RuntimeError) as exc:
+            logger.warning(
+                "Reranker 加载失败，降级为直通模式（结果仍可用，但无精排）",
+                error=str(exc),
+            )
 
     logger.info("所有资源初始化完成，开始接受请求")
 

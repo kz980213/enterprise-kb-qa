@@ -103,6 +103,25 @@ class RerankerProtocol(Protocol):
 
 
 # ──────────────────────────────────────────────────────────────
+# 降级实现：PassthroughReranker（内存不足时的无操作精排器）
+# ──────────────────────────────────────────────────────────────
+
+class PassthroughReranker:
+    """当本地模型加载失败时的无操作降级精排器。
+    保持原始顺序，分数统一赋 1.0，使下游阈值过滤不受影响。
+    """
+
+    def rerank(self, query: str, passages: list[str]) -> list[RerankResult]:
+        return [
+            RerankResult(chunk_index=i, score=1.0, content=p)
+            for i, p in enumerate(passages)
+        ]
+
+    async def arerank(self, query: str, passages: list[str]) -> list[RerankResult]:
+        return self.rerank(query, passages)
+
+
+# ──────────────────────────────────────────────────────────────
 # 本地实现：BGE_Reranker
 # ──────────────────────────────────────────────────────────────
 
@@ -359,9 +378,11 @@ def init_reranker(model_name: str, device: str) -> None:
 
 
 def get_reranker() -> RerankerProtocol:
-    """返回全局精排器单例（可用作 FastAPI Depends）。"""
+    """返回全局精排器单例（可用作 FastAPI Depends）。
+    若模型加载失败（内存不足等），返回直通精排器保证系统可用。
+    """
     if _reranker is None:
-        raise RuntimeError("Reranker 未初始化，请先在 lifespan 中调用 init_reranker()")
+        return PassthroughReranker()
     return _reranker
 
 
