@@ -351,6 +351,7 @@ function handleKeydown(e: KeyboardEvent) {
         >⚡</button>
 
         <button
+          v-show="sessions.selectedModel === 'claude'"
           class="btn-ghost img-attach"
           :disabled="pendingImages.length >= 5"
           title="附加图片（或直接粘贴/拖拽）"
