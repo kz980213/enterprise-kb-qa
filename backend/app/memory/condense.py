@@ -20,7 +20,7 @@ M2 短期记忆：查询改写（指代消解 / condense question）
   ④ API 异常时 fallback 到原始 query，保证服务不中断。
 
 模块依赖：
-  → app.config（settings.deepseek_model）
+  → app.config（settings.claude_model）
   → app.generation.llm_client（get_llm_client — 复用单例，不重新建连接）
   → app.memory.history（HistoryTurn 类型）
 """
@@ -83,16 +83,14 @@ async def condense_question(
     # ── 调用 LLM 改写 ────────────────────────────────────────────
     try:
         client = get_llm_client()
-        resp = await client.chat.completions.create(
-            model=settings.deepseek_model,
-            messages=[
-                {"role": "system", "content": _CONDENSE_SYSTEM},
-                {"role": "user",   "content": user_content},
-            ],
+        resp = await client.messages.create(
+            model=settings.claude_model,
+            system=_CONDENSE_SYSTEM,
+            messages=[{"role": "user", "content": user_content}],
             temperature=0.0,   # 确定性输出：改写不应引入随机性
             max_tokens=150,    # 改写结果就是一句话，不需要多
         )
-        condensed = (resp.choices[0].message.content or "").strip()
+        condensed = (resp.content[0].text if resp.content else "").strip()
         if not condensed:
             logger.warning("查询改写返回空串，使用原始 query")
             return query

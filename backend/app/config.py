@@ -34,10 +34,14 @@ class Settings(BaseSettings):
     deepseek_api_base: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
 
+    # ── Anthropic / Claude ────────────────────────────────────
+    anthropic_api_key: str = ""          # ANTHROPIC_API_KEY 环境变量
+    claude_model: str = "claude-sonnet-4-6"
+
     # ── JWT 鉴权 ──────────────────────────────────────────────
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 480
+    access_token_expire_minutes: int = 360  # 6 小时（原 8 小时）
 
     # ── Langfuse 可观测 ───────────────────────────────────────
     langfuse_public_key: str | None = None

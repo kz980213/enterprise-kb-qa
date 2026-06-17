@@ -25,6 +25,11 @@ class ChatRequest(BaseModel):
         default=None,
         description="会话 ID；为 None 时自动创建新会话",
     )
+    images: list[str] = Field(
+        default_factory=list,
+        description="base64 编码图片（不含 data: URI 前缀），最多 5 张",
+        max_length=5,
+    )
 
 
 # ──────────────────────────────────────────────────────────────

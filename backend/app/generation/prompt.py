@@ -31,6 +31,7 @@
   - system 强制规则"仅依据参考资料"覆盖历史中可能存在的"过时答案"
 """
 
+import base64
 from dataclasses import dataclass
 
 
@@ -134,57 +135,80 @@ def build_memories_section(memories: list[str]) -> str:
     return _MEMORIES_SECTION_TEMPLATE.format(memory_lines=lines)
 
 
+def _detect_media_type(b64: str) -> str:
+    """根据 base64 数据的魔数推断图片 MIME 类型，默认 image/jpeg。"""
+    try:
+        data = base64.b64decode(b64[:16] + "==")
+        if data[:2] == b"\xff\xd8":
+            return "image/jpeg"
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png"
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            return "image/gif"
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            return "image/webp"
+    except Exception:
+        pass
+    return "image/jpeg"
+
+
 def build_messages(
     query: str,
     context_items: list[ContextItem],
     history: list[dict[str, str]] | None = None,
     memories: list[str] | None = None,
-) -> list[dict[str, str]]:
+    images: list[str] | None = None,
+) -> tuple[str, list[dict]]:
     """
-    构建 OpenAI-compatible messages 列表（M3 新增 memories 参数）。
+    构建 Anthropic-compatible (system, messages) 对。
+
+    返回值：
+        (system_str, messages_list)
+        · system_str    — 传入 client.messages.create(system=...) 顶级参数
+        · messages_list — 历史轮次 + 当前用户消息（无 system 消息）
 
     消息结构（有历史 + 有记忆时）：
-        [
-            {"role": "system",    "content": <M3 记忆段落（可选）+
-                                              RAG 强制规则 + 参考资料>},
+        system_str = <M3 记忆段落（可选）+ RAG 强制规则 + 参考资料>
+        messages   = [
             {"role": "user",      "content": <M2 历史问题 1>},
             {"role": "assistant", "content": <M2 历史回答 1>},
             ...（历史轮次，已按双上限截断）...
-            {"role": "user",      "content": <当前问题>},
+            {"role": "user",      "content": <当前问题（或 content blocks）>},
         ]
 
-    约束：
-        · memories 注入 system prompt 顶部，调整风格；不替代 RAG 事实。
-        · system 强制规则"仅依据【参考资料】作答"优先于记忆描述的风格偏好。
-        · history 参数为 None 或 [] 时退化为无历史行为，与 M2 之前完全一致。
-        · memories 参数为 None 或 [] 时退化为无记忆行为，与 M2 完全一致。
-
-    Args:
-        query:         用户原始问题（原始 query，非改写后的 search_query）
-        context_items: 本轮检索 + 精排后的 ContextItem 列表
-        history:       M2 对话历史；None / [] = 无历史（第一轮 / 新会话）
-        memories:      M3 长期记忆；None / [] = 无长期记忆
-                       每项是一句话用户偏好/事实字符串
-
-    Returns:
-        OpenAI-compatible messages list，可直接传入 client.chat.completions.create
+    多模态：
+        当 images 非空时，当前用户消息使用 Anthropic content blocks 格式：
+        [{"type": "image", "source": {...}}, ..., {"type": "text", "text": query}]
     """
-    # M3: 构建记忆段落（空时为 ""，不产生任何额外内容）
     memories_section = build_memories_section(memories or [])
-
-    context_str = build_context_str(context_items)
-    system_content = _SYSTEM_TEMPLATE.format(
+    context_str      = build_context_str(context_items)
+    system_str       = _SYSTEM_TEMPLATE.format(
         memories_section=memories_section,
         context=context_str,
     )
 
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": system_content},
-    ]
+    messages: list[dict] = []
 
     # M2: 注入历史轮次（system 之后，当前 user 之前）
     if history:
         messages.extend(history)
 
-    messages.append({"role": "user", "content": query})
-    return messages
+    # 当前用户消息：有图片时用 content blocks，否则纯文本
+    if images:
+        content_blocks: list[dict] = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": _detect_media_type(img),
+                    "data": img,
+                },
+            }
+            for img in images
+        ]
+        content_blocks.append({"type": "text", "text": query})
+        messages.append({"role": "user", "content": content_blocks})
+    else:
+        messages.append({"role": "user", "content": query})
+
+    return (system_str, messages)

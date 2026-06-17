@@ -36,6 +36,7 @@ export async function streamChat(
   sessionId: string | null | undefined,
   callbacks: ChatCallbacks,
   signal?: AbortSignal,
+  images?: string[],
 ): Promise<void> {
   await fetchEventSource(`${API_BASE}/api/v1/chat`, {
     method: 'POST',
@@ -46,6 +47,7 @@ export async function streamChat(
     body: JSON.stringify({
       query,
       ...(sessionId != null ? { session_id: sessionId } : {}),
+      images: images ?? [],
     }),
     signal,
     openWhenHidden: true,   // 标签页隐藏时不中断流

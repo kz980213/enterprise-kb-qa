@@ -23,7 +23,7 @@ async function handleSubmit() {
   try {
     if (mode.value === 'login') {
       const resp = await login({ username: username.value, password: password.value })
-      auth.setToken(resp.access_token)
+      auth.setToken(resp.access_token, resp.expires_in)
       setApiToken(resp.access_token)
       const user = await getMe()
       auth.setUser(user)
@@ -32,7 +32,7 @@ async function handleSubmit() {
     } else {
       await register({ username: username.value, password: password.value })
       const resp = await login({ username: username.value, password: password.value })
-      auth.setToken(resp.access_token)
+      auth.setToken(resp.access_token, resp.expires_in)
       setApiToken(resp.access_token)
       const user = await getMe()
       auth.setUser(user)

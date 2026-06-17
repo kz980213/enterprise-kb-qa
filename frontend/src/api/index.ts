@@ -29,7 +29,8 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && window.location.pathname !== '/login') {
       setApiToken(null)
       localStorage.removeItem('kb_token')
-      window.location.href = '/login'
+      localStorage.removeItem('kb_expires_at')
+      window.dispatchEvent(new CustomEvent('kb:session-expired'))
     }
     return Promise.reject(error)
   },

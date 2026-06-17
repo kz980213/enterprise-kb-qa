@@ -3,7 +3,7 @@
  * ChatWindow — 流式对话 + 引用卡片跳转 + 常用语快速填充
  * 居中布局：消息列表和输入栏限制最大宽度 760px，水平居中。
  */
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useAuthStore } from '@/stores/auth'
@@ -17,9 +17,12 @@ const auth        = useAuthStore()
 const sessions    = useSessionsStore()
 const quickPhrases = useQuickPhrasesStore()
 
-const inputText   = ref('')
-const chatRef     = ref<HTMLDivElement | null>(null)
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const inputText      = ref('')
+const chatRef        = ref<HTMLDivElement | null>(null)
+const textareaRef    = ref<HTMLTextAreaElement | null>(null)
+const fileInputRef   = ref<HTMLInputElement | null>(null)
+const pendingImages  = ref<string[]>([])
+const isDragging     = ref(false)
 
 // ── 常用语面板开关 ────────────────────────────────────────────
 const phrasePanelOpen = ref(false)
@@ -56,10 +59,68 @@ watch(
   () => nextTick(scrollToBottom),
 )
 
+// ── 图片处理 ──────────────────────────────────────────────────
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      // 去掉 "data:image/...;base64," 前缀，只保留纯 base64
+      resolve(result.split(',')[1] ?? result)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+async function addImageFiles(files: FileList | File[]) {
+  const arr = Array.from(files).filter(f => f.type.startsWith('image/'))
+  const remaining = 5 - pendingImages.value.length
+  const toAdd = arr.slice(0, remaining)
+  const results = await Promise.all(toAdd.map(fileToBase64))
+  pendingImages.value.push(...results)
+}
+
+function triggerImagePicker() {
+  fileInputRef.value?.click()
+}
+
+async function handleFileSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (input.files) await addImageFiles(input.files)
+  input.value = ''   // 重置以便重复选同一文件
+}
+
+function handlePaste(e: ClipboardEvent) {
+  const files = e.clipboardData?.files
+  if (files && files.length) addImageFiles(files)
+}
+
+function handleDragover(e: DragEvent) {
+  e.preventDefault()
+  isDragging.value = true
+}
+
+function handleDragleave() {
+  isDragging.value = false
+}
+
+async function handleDrop(e: DragEvent) {
+  e.preventDefault()
+  isDragging.value = false
+  const files = e.dataTransfer?.files
+  if (files) await addImageFiles(files)
+}
+
 onMounted(() => {
   if (quickPhrases.items.length === 0) {
     quickPhrases.fetchList().catch(() => {})
   }
+  document.addEventListener('paste', handlePaste)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('paste', handlePaste)
 })
 
 // ── 渲染助手消息内容 ──────────────────────────────────────────
@@ -100,7 +161,9 @@ async function sendMessage() {
   const query = inputText.value.trim()
   if (!query || sessions.isStreaming) return
   inputText.value = ''
-  await sessions.sendMessage(query, auth.token ?? '')
+  const imgs = [...pendingImages.value]
+  pendingImages.value = []
+  await sessions.sendMessage(query, auth.token ?? '', imgs)
 }
 
 function stopStreaming() { sessions.abortCurrentStream() }
@@ -148,6 +211,15 @@ function handleKeydown(e: KeyboardEvent) {
       >
         <div class="bubble">
           <template v-if="msg.role === 'user'">
+            <div v-if="msg.images?.length" class="bubble-images">
+              <img
+                v-for="(img, i) in msg.images"
+                :key="i"
+                :src="`data:image/jpeg;base64,${img}`"
+                class="bubble-img"
+                alt="附图"
+              />
+            </div>
             <p class="user-text">{{ msg.content }}</p>
           </template>
 
@@ -175,14 +247,42 @@ function handleKeydown(e: KeyboardEvent) {
       </div>
     </div>
 
+    <!-- 隐藏文件选择器 -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      accept="image/*"
+      multiple
+      style="display:none"
+      @change="handleFileSelect"
+    />
+
     <!-- 输入区 -->
-    <div class="input-area-wrapper">
+    <div
+      class="input-area-wrapper"
+      :class="{ dragging: isDragging }"
+      @dragover="handleDragover"
+      @dragleave="handleDragleave"
+      @drop="handleDrop"
+    >
       <QuickPhrasesPanel
         v-if="phrasePanelOpen"
         class="phrase-panel"
         @fill="fillFromPhrase"
         @close="closePhrasePanel"
       />
+
+      <!-- 图片预览条 -->
+      <div v-if="pendingImages.length" class="img-preview-bar">
+        <div
+          v-for="(img, i) in pendingImages"
+          :key="i"
+          class="img-thumb"
+        >
+          <img :src="`data:image/jpeg;base64,${img}`" alt="附图" />
+          <button class="img-remove" @click="pendingImages.splice(i, 1)" title="移除">×</button>
+        </div>
+      </div>
 
       <div class="input-bar">
         <button
@@ -191,6 +291,13 @@ function handleKeydown(e: KeyboardEvent) {
           @click="phrasePanelOpen ? closePhrasePanel() : openPhrasePanel()"
           title="常用语"
         >⚡</button>
+
+        <button
+          class="btn-ghost img-attach"
+          :disabled="pendingImages.length >= 5"
+          title="附加图片（或直接粘贴/拖拽）"
+          @click="triggerImagePicker"
+        >🖼</button>
 
         <textarea
           ref="textareaRef"
@@ -207,7 +314,7 @@ function handleKeydown(e: KeyboardEvent) {
           <button
             v-else
             class="btn-primary"
-            :disabled="!inputText.trim()"
+            :disabled="!inputText.trim() && !pendingImages.length"
             @click="sendMessage"
           >发送</button>
         </div>
@@ -344,7 +451,22 @@ function handleKeydown(e: KeyboardEvent) {
   box-shadow: var(--shadow);
 }
 
-.user-text { white-space: pre-wrap; }
+.user-text { white-space: pre-wrap; margin: 0; }
+
+/* 气泡内图片 */
+.bubble-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.bubble-img {
+  max-width: 200px;
+  max-height: 160px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  display: block;
+}
 
 .assistant-content :deep(p) { margin: 0 0 8px; }
 .assistant-content :deep(p:last-child) { margin-bottom: 0; }
@@ -433,7 +555,8 @@ function handleKeydown(e: KeyboardEvent) {
   align-items: flex-end;
 }
 
-.phrase-trigger {
+.phrase-trigger,
+.img-attach {
   font-size: 15px;
   padding: 6px 9px;
   border-radius: var(--radius-sm);
@@ -443,11 +566,61 @@ function handleKeydown(e: KeyboardEvent) {
   margin-bottom: 1px;
   transition: background var(--transition), color var(--transition);
 }
-.phrase-trigger:hover { color: var(--primary); background: var(--primary-subtle); }
+.phrase-trigger:hover,
+.img-attach:hover { color: var(--primary); background: var(--primary-subtle); }
 .phrase-trigger.active {
   color: var(--primary);
   background: var(--primary-light);
   border-color: var(--primary);
+}
+.img-attach:disabled { opacity: .35; cursor: not-allowed; }
+
+/* 图片预览条 */
+.img-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 20px 0;
+}
+.img-thumb {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.img-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.img-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  background: rgba(17,24,39,.65);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.img-remove:hover { background: rgba(220,38,38,.85); }
+
+/* 拖拽高亮 */
+.input-area-wrapper.dragging {
+  outline: 2px dashed var(--primary);
+  outline-offset: -2px;
+  background: var(--primary-subtle);
 }
 
 .input-textarea {

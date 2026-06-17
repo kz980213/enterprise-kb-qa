@@ -51,6 +51,7 @@ export interface Message {
   content: string
   citations: Citation[]
   isStreaming: boolean
+  images?: string[]   // 用户消息附带的 base64 图片（仅用于回显）
 }
 
 export interface KBDocument {

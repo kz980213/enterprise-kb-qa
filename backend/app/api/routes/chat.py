@@ -273,6 +273,7 @@ async def chat(
                 ranked_chunks=ranked_chunks,
                 history=history_dicts or None,   # ← M2: 注入历史轮次
                 memories=memories or None,       # ← M3: 注入长期记忆（空时不注入）
+                images=request.images or None,   # ← 多模态图片
             ):
                 # 同步积累内容，供 finally 落库
                 if event.type == "token":

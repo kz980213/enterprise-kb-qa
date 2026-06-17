@@ -145,7 +145,7 @@ export const useSessionsStore = defineStore('sessions', () => {
    *   2. currentId 设为 tmpKey —— 侧边栏高亮、messages 正常显示
    *   3. session 事件到来后，占位项 id 原地替换为真实 session_id —— 无闪烁
    */
-  async function sendMessage(query: string, authToken: string): Promise<void> {
+  async function sendMessage(query: string, authToken: string, images: string[] = []): Promise<void> {
     const isNewSession = currentId.value === null
 
     // 捕获此刻的 session_id（新会话=null，发给后端）
@@ -183,6 +183,7 @@ export const useSessionsStore = defineStore('sessions', () => {
       content:     query,
       citations:   [],
       isStreaming: false,
+      ...(images.length ? { images } : {}),
     })
 
     // 初始化流状态
@@ -254,6 +255,7 @@ export const useSessionsStore = defineStore('sessions', () => {
           },
         },
         abortCtrl.signal,
+        images,
       )
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
