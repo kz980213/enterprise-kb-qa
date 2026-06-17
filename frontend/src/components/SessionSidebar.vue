@@ -1,8 +1,4 @@
 <script setup lang="ts">
-/**
- * SessionSidebar — 会话历史列表
- * 新建/删除/重命名逻辑由此组件负责；顶部品牌和底部用户信息由 HomeView 侧边栏控制。
- */
 import { ref, onMounted } from 'vue'
 import { useSessionsStore } from '@/stores/sessions'
 import type { SessionListItem } from '@/types'
@@ -36,13 +32,28 @@ function cancelRename() {
   editingId.value = null
 }
 
-// ── 删除 ────────────────────────────────────────────────────
-async function handleDelete(item: SessionListItem) {
-  if (!confirm(`确认删除对话"${item.title || '新对话'}"？\n此操作不可撤销。`)) return
+// ── 删除（自定义确认对话框）────────────────────────────────
+const pendingDelete = ref<SessionListItem | null>(null)
+const deleteError   = ref('')
+
+function handleDelete(item: SessionListItem) {
+  deleteError.value   = ''
+  pendingDelete.value = item
+}
+
+function cancelDelete() {
+  pendingDelete.value = null
+  deleteError.value   = ''
+}
+
+async function proceedDelete() {
+  const item = pendingDelete.value
+  if (!item) return
   try {
     await sessions.remove(item.id)
+    pendingDelete.value = null
   } catch {
-    alert('删除失败，请重试')
+    deleteError.value = '删除失败，请重试'
   }
 }
 
@@ -52,7 +63,7 @@ async function handleSelect(id: string) {
   try {
     await sessions.selectSession(id)
   } catch {
-    alert('加载对话历史失败，请重试')
+    // 静默处理
   }
 }
 
@@ -121,13 +132,42 @@ onMounted(() => {
           </div>
 
           <div class="item-actions">
-            <button class="action-btn" title="重命名" @click.stop="startRename(item)">✎</button>
-            <button class="action-btn danger" title="删除" @click.stop="handleDelete(item)">×</button>
+            <button class="action-btn" title="重命名" @click.stop="startRename(item)">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="action-btn danger" title="删除" @click.stop="handleDelete(item)">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
           </div>
         </template>
       </div>
     </div>
   </div>
+
+  <!-- 删除确认对话框（Teleport 到 body，避免侧边栏 overflow 裁切） -->
+  <Teleport to="body">
+    <Transition name="del-fade">
+      <div v-if="pendingDelete" class="del-overlay" @click.self="cancelDelete">
+        <div class="del-modal" role="dialog" aria-modal="true">
+          <!-- 图标 -->
+          <div class="del-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </div>
+
+          <h3 class="del-title">删除对话</h3>
+          <p class="del-name">"{{ pendingDelete.title || '新对话' }}"</p>
+          <p class="del-hint">删除后无法恢复，对话记录将永久消失。</p>
+
+          <p v-if="deleteError" class="del-error">{{ deleteError }}</p>
+
+          <div class="del-actions">
+            <button class="del-cancel" @click="cancelDelete">取消</button>
+            <button class="del-confirm" @click="proceedDelete">确认删除</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -239,7 +279,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -267,5 +306,136 @@ onMounted(() => {
   min-width: 0;
   width: 100%;
   box-shadow: var(--shadow-focus);
+}
+
+/* ── 删除确认对话框 ─────────────────────────────────────────── */
+.del-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .5);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(2px);
+}
+
+.del-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 28px 24px;
+  width: 320px;
+  max-width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.del-icon-wrap {
+  width: 48px;
+  height: 48px;
+  background: #fef2f2;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger);
+  margin-bottom: 4px;
+}
+
+.del-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.del-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.del-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 8px;
+  line-height: 1.5;
+}
+
+.del-error {
+  font-size: 12px;
+  color: var(--danger);
+  background: #fef2f2;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0;
+  width: 100%;
+}
+
+.del-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.del-cancel {
+  flex: 1;
+  padding: 8px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+  font-family: inherit;
+}
+.del-cancel:hover { background: var(--surface); border-color: var(--text-muted); }
+
+.del-confirm {
+  flex: 1;
+  padding: 8px 0;
+  background: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity var(--transition);
+  font-family: inherit;
+}
+.del-confirm:hover { opacity: .88; }
+
+/* 入场/出场动画 */
+.del-fade-enter-active,
+.del-fade-leave-active {
+  transition: opacity .2s ease;
+}
+.del-fade-enter-active .del-modal,
+.del-fade-leave-active .del-modal {
+  transition: transform .2s ease, opacity .2s ease;
+}
+.del-fade-enter-from,
+.del-fade-leave-to {
+  opacity: 0;
+}
+.del-fade-enter-from .del-modal,
+.del-fade-leave-to .del-modal {
+  transform: scale(.95) translateY(8px);
+  opacity: 0;
 }
 </style>

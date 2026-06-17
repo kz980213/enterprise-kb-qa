@@ -91,6 +91,36 @@ const visibleDocs = computed(() => {
 const reuploadInputRef = ref<HTMLInputElement | null>(null)
 const reuploadingDoc   = ref<KBDocument | null>(null)
 
+// ── 删除确认 ─────────────────────────────────────────────────
+const pendingDeleteDoc = ref<KBDocument | null>(null)
+const deleteDocError   = ref('')
+
+function requestDeleteDoc(doc: KBDocument) {
+  deleteDocError.value   = ''
+  pendingDeleteDoc.value = doc
+}
+
+function cancelDocDelete() {
+  pendingDeleteDoc.value = null
+  deleteDocError.value   = ''
+}
+
+async function proceedDocDelete() {
+  const doc = pendingDeleteDoc.value
+  if (!doc) return
+  _stopPoll(doc.id)
+  try {
+    await deleteDocument(doc.id)
+    pendingDeleteDoc.value = null
+    await loadDocs()
+  } catch (e: unknown) {
+    const httpStatus = (e as { response?: { status?: number } })?.response?.status
+    deleteDocError.value = httpStatus === 403
+      ? '无权限：删除文档需要管理员账号'
+      : '删除失败，请重试'
+  }
+}
+
 // ── 权限编辑 ─────────────────────────────────────────────────
 const editingDoc      = ref<KBDocument | null>(null)
 const editTags        = ref<string[]>([])
@@ -411,18 +441,8 @@ async function savePermEdit() {
 // 删除文档
 // ─────────────────────────────────────────────────────────────
 
-async function handleDelete(docId: string, filename: string) {
-  if (!confirm(`确认删除文档"${filename}"？此操作不可撤销。`)) return
-  _stopPoll(docId)
-  try {
-    await deleteDocument(docId)
-    await loadDocs()
-  } catch (e: unknown) {
-    const httpStatus = (e as { response?: { status?: number } })?.response?.status
-    formError.value = httpStatus === 403
-      ? '无权限：删除文档需要管理员账号'
-      : '删除失败，请重试'
-  }
+function handleDelete(doc: KBDocument) {
+  requestDeleteDoc(doc)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -777,7 +797,7 @@ function docPercent(doc: KBDocument): number {
             >
               权限
             </button>
-            <button class="btn-danger del-btn" @click="handleDelete(doc.id, doc.filename)">
+            <button class="btn-danger del-btn" @click="handleDelete(doc)">
               删除
             </button>
           </div>
@@ -849,6 +869,27 @@ function docPercent(doc: KBDocument): number {
           </div>
         </div>
       </div>
+    </Teleport>
+
+    <!-- 删除文档确认对话框 -->
+    <Teleport to="body">
+      <Transition name="del-fade">
+        <div v-if="pendingDeleteDoc" class="del-overlay" @click.self="cancelDocDelete">
+          <div class="del-modal" role="dialog" aria-modal="true">
+            <div class="del-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </div>
+            <h3 class="del-title">删除文档</h3>
+            <p class="del-name">"{{ pendingDeleteDoc.filename }}"</p>
+            <p class="del-hint">文档及其所有索引将被永久删除，此操作无法撤销。</p>
+            <p v-if="deleteDocError" class="del-error">{{ deleteDocError }}</p>
+            <div class="del-actions">
+              <button class="del-cancel" @click="cancelDocDelete">取消</button>
+              <button class="del-confirm" @click="proceedDocDelete">确认删除</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -1339,5 +1380,133 @@ function docPercent(doc: KBDocument): number {
   border: none;
   cursor: pointer;
   padding: 0;
+}
+
+/* ── 删除确认对话框 ─────────────────────────────────────── */
+.del-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .5);
+  z-index: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(2px);
+}
+
+.del-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 28px 24px;
+  width: 320px;
+  max-width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.del-icon-wrap {
+  width: 48px;
+  height: 48px;
+  background: #fef2f2;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger);
+  margin-bottom: 4px;
+}
+
+.del-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.del-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.del-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 8px;
+  line-height: 1.5;
+}
+
+.del-error {
+  font-size: 12px;
+  color: var(--danger);
+  background: #fef2f2;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 0;
+  width: 100%;
+}
+
+.del-actions {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.del-cancel {
+  flex: 1;
+  padding: 8px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+  font-family: inherit;
+}
+.del-cancel:hover { background: var(--surface); border-color: var(--text-muted); }
+
+.del-confirm {
+  flex: 1;
+  padding: 8px 0;
+  background: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity var(--transition);
+  font-family: inherit;
+}
+.del-confirm:hover { opacity: .88; }
+
+.del-fade-enter-active,
+.del-fade-leave-active {
+  transition: opacity .2s ease;
+}
+.del-fade-enter-active .del-modal,
+.del-fade-leave-active .del-modal {
+  transition: transform .2s ease, opacity .2s ease;
+}
+.del-fade-enter-from,
+.del-fade-leave-to { opacity: 0; }
+.del-fade-enter-from .del-modal,
+.del-fade-leave-to .del-modal {
+  transform: scale(.95) translateY(8px);
+  opacity: 0;
 }
 </style>
