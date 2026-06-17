@@ -67,21 +67,39 @@ function fillFromPhrase(content: string) {
   })
 }
 
-// ── 滚动到底部 ────────────────────────────────────────────────
-function scrollToBottom() {
-  const el = chatRef.value
-  if (el) el.scrollTop = el.scrollHeight
+// ── 智能滚动：用户手动上翻后停止跟随，滚回底部后恢复 ──────
+const userScrolled = ref(false)
+
+function isNearBottom(el: HTMLElement, threshold = 80): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold
 }
 
-watch(() => sessions.currentId, () => nextTick(scrollToBottom))
+function handleScroll() {
+  const el = chatRef.value
+  if (!el) return
+  userScrolled.value = !isNearBottom(el)
+}
 
+function scrollToBottom(force = false) {
+  const el = chatRef.value
+  if (!el || (userScrolled.value && !force)) return
+  el.scrollTop = el.scrollHeight
+}
+
+// 切换会话：强制跳到底部并重置标记
+watch(() => sessions.currentId, () => {
+  userScrolled.value = false
+  nextTick(() => scrollToBottom(true))
+})
+
+// 流式内容更新：仅在未手动上翻时跟随
 watch(
   () => {
     const msgs = sessions.messages
     const last = msgs.at(-1)
     return msgs.length + (last?.content?.length ?? 0)
   },
-  () => nextTick(scrollToBottom),
+  () => nextTick(() => scrollToBottom()),
 )
 
 // ── 流式结束后渲染 Mermaid 图表 ──────────────────────────────
@@ -200,6 +218,7 @@ async function sendMessage() {
   const query = inputText.value.trim()
   if (!query || sessions.isStreaming) return
   inputText.value = ''
+  userScrolled.value = false   // 发送新消息时恢复自动跟随
   const imgs = [...pendingImages.value]
   pendingImages.value = []
   await sessions.sendMessage(query, auth.token ?? '', imgs)
@@ -223,7 +242,7 @@ function handleKeydown(e: KeyboardEvent) {
 <template>
   <div class="chat-window">
     <!-- 消息列表 -->
-    <div class="messages" ref="chatRef">
+    <div class="messages" ref="chatRef" @scroll="handleScroll">
       <!-- 空状态 -->
       <div v-if="sessions.messages.length === 0" class="empty-state">
         <div class="avatar-brand">苏</div>
