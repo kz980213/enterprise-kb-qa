@@ -863,34 +863,30 @@ function docPercent(doc: KBDocument): number {
   flex-direction: column;
   gap: 14px;
 }
-.panel-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text);
-  margin: 0;
-}
 
 /* ── 区块卡片 ────────────────────────────────────────────── */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   box-shadow: var(--shadow-sm);
 }
+
 .section-title {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: none;
-  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  border-left: 2.5px solid var(--primary);
+  padding-left: 8px;
   display: flex;
   align-items: center;
   gap: 6px;
   margin: 0;
+  line-height: 1;
 }
 .q-badge {
   background: var(--primary);
@@ -905,14 +901,14 @@ function docPercent(doc: KBDocument): number {
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 .field > label {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 500;
+  font-size: 11.5px;
+  color: var(--text);
+  font-weight: 600;
 }
-.hint       { font-weight: 400; }
+.hint       { font-weight: 400; color: var(--text-muted); }
 .required   { color: var(--danger); margin-left: 2px; }
 .field-hint { font-size: 10px; color: var(--text-muted); margin: 0; }
 .field-hint.warn { color: #d97706; }
@@ -922,10 +918,11 @@ function docPercent(doc: KBDocument): number {
 .batch-tip  {
   font-size: 11px;
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--bg);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: 7px 10px;
   margin: 0;
+  border-left: 2px solid var(--border);
 }
 
 /* ── 文件选择区 ──────────────────────────────────────────── */
@@ -935,7 +932,19 @@ function docPercent(doc: KBDocument): number {
   align-items: center;
   gap: 8px;
 }
-.pick-btn    { font-size: 12px; padding: 4px 12px; flex-shrink: 0; }
+.pick-btn {
+  font-size: 12px;
+  padding: 6px 14px;
+  flex-shrink: 0;
+  font-weight: 500;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.pick-btn:hover { border-color: var(--primary); background: var(--primary-light, #eff6ff); color: var(--primary); }
 .file-count  { font-size: 11px; color: var(--text-muted); }
 .file-count.muted { opacity: .6; }
 
@@ -946,14 +955,15 @@ function docPercent(doc: KBDocument): number {
   max-height: 110px;
   overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px;
+  border-radius: var(--radius-sm);
+  padding: 5px;
+  background: var(--bg);
 }
 .sf-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 5px;
+  padding: 4px 6px;
   border-radius: 3px;
   font-size: 11px;
   color: var(--text);
@@ -967,7 +977,7 @@ function docPercent(doc: KBDocument): number {
   text-overflow: ellipsis;
   min-width: 0;
 }
-.sf-size { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.sf-size { font-size: 10px; color: var(--text-muted); flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; }
 .sf-remove {
   width: 18px;
   height: 18px;
@@ -982,22 +992,22 @@ function docPercent(doc: KBDocument): number {
 .sf-remove:hover { color: var(--danger); background: #fef2f2; border-radius: 3px; }
 
 /* ── 标签多选 ────────────────────────────────────────────── */
-.tag-checkboxes { display: flex; flex-wrap: wrap; gap: 5px; padding: 4px 0; }
+.tag-checkboxes { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 0; }
 .tag-option {
   display: flex;
   align-items: center;
   gap: 4px;
   font-size: 11px;
   color: var(--text);
-  background: var(--surface);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 3px 8px;
+  padding: 4px 9px;
   cursor: pointer;
-  transition: background .12s, border-color .12s;
+  transition: background .12s, border-color .12s, color .12s;
 }
 .tag-option input { width: auto; margin: 0; cursor: pointer; }
-.tag-option:hover:not(.selected) { background: var(--bg); }
+.tag-option:hover:not(.selected) { border-color: var(--primary); }
 .tag-option.selected {
   background: var(--primary-light, #eff6ff);
   border-color: var(--primary);
@@ -1006,15 +1016,23 @@ function docPercent(doc: KBDocument): number {
 }
 
 /* ── 上传按钮 ────────────────────────────────────────────── */
-.upload-btn { width: 100%; padding: 9px; font-size: 13px; font-weight: 600; }
+.upload-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .1px;
+  margin-top: 2px;
+}
 
 .error {
   font-size: 12px;
   color: var(--danger);
   background: #fef2f2;
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
   margin: 0;
+  border-left: 2px solid var(--danger);
 }
 
 /* ── 入库队列 ────────────────────────────────────────────── */
@@ -1022,9 +1040,9 @@ function docPercent(doc: KBDocument): number {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: var(--surface);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
   border: 1px solid var(--border);
 }
 .q-item.q-done   { border-color: #86efac; background: #f0fdf4; }
@@ -1039,7 +1057,7 @@ function docPercent(doc: KBDocument): number {
   gap: 4px;
 }
 .q-name {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -1070,8 +1088,9 @@ function docPercent(doc: KBDocument): number {
   color: var(--text-muted);
   white-space: nowrap;
   min-width: 90px;
+  font-family: 'IBM Plex Mono', monospace;
 }
-.q-done-text { font-size: 11px; color: #16a34a; font-weight: 600; }
+.q-done-text { font-size: 11.5px; color: #16a34a; font-weight: 600; }
 .q-err-text  {
   font-size: 10px;
   color: #b91c1c;
@@ -1094,13 +1113,27 @@ function docPercent(doc: KBDocument): number {
 
 /* ── 文档列表 ────────────────────────────────────────────── */
 .list-header { display: flex; align-items: center; gap: 8px; }
-.count       { font-size: 11px; color: var(--text-muted); }
-.refresh-btn { padding: 2px 7px; font-size: 14px; }
+.count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+.refresh-btn {
+  padding: 3px 9px;
+  font-size: 13px;
+  margin-left: auto;
+  color: var(--text-muted);
+}
+.refresh-btn:hover { color: var(--primary); }
 .tip {
   font-size: 13px;
   color: var(--text-muted);
   text-align: center;
-  padding: 16px 0;
+  padding: 20px 0;
 }
 
 .doc-list {
@@ -1113,17 +1146,19 @@ function docPercent(doc: KBDocument): number {
 .doc-item {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  background: var(--surface-sunken);
+  gap: 10px;
+  background: var(--bg);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  padding: 8px 10px;
+  padding: 10px 12px;
   border-left: 3px solid transparent;
+  transition: border-left-color var(--transition), box-shadow var(--transition);
 }
-.doc-item.doc-processing { border-left-color: var(--primary-mid); }
+.doc-item:hover { border-left-color: var(--primary); box-shadow: var(--shadow-sm); }
+.doc-item.doc-processing { border-left-color: var(--primary); }
 .doc-item.doc-failed     { border-left-color: var(--danger); background: #fff8f8; }
 
-.doc-icon { font-size: 16px; flex-shrink: 0; margin-top: 2px; }
+.doc-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
 .doc-info {
   flex: 1;
   min-width: 0;
@@ -1132,7 +1167,7 @@ function docPercent(doc: KBDocument): number {
   gap: 4px;
 }
 .doc-name {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
   white-space: nowrap;
@@ -1145,9 +1180,10 @@ function docPercent(doc: KBDocument): number {
   font-size: 11px;
   color: var(--text-muted);
   align-items: center;
+  font-family: 'IBM Plex Mono', monospace;
 }
 
-.status-badge { font-size: 10px; border-radius: 3px; padding: 1px 5px; font-weight: 600; }
+.status-badge { font-size: 10px; border-radius: 3px; padding: 2px 6px; font-weight: 600; font-family: inherit; }
 .status-badge.processing { background: #dbeafe; color: #1d4ed8; }
 .status-badge.failed     { background: #fee2e2; color: #b91c1c; cursor: help; }
 
@@ -1157,8 +1193,9 @@ function docPercent(doc: KBDocument): number {
   background: var(--primary-light, #eff6ff);
   color: var(--primary);
   border-radius: 4px;
-  padding: 1px 5px;
-  font-weight: 500;
+  padding: 1px 6px;
+  font-weight: 600;
+  letter-spacing: .1px;
 }
 .tag.sens.public       { background: #dcfce7; color: #166534; }
 .tag.sens.internal     { background: #fef3c7; color: #92400e; }
@@ -1178,10 +1215,25 @@ function docPercent(doc: KBDocument): number {
   gap: 4px;
   flex-shrink: 0;
 }
-.reupload-btn { font-size: 10px; padding: 3px 7px; color: var(--primary, #2563eb); }
-.perm-btn     { font-size: 10px; padding: 3px 7px; }
+.reupload-btn {
+  font-size: 10.5px;
+  padding: 4px 9px;
+  color: var(--primary);
+  border-color: var(--primary-light, #bfdbfe);
+  font-weight: 500;
+}
+.reupload-btn:hover { background: var(--primary-light, #eff6ff); }
+.perm-btn {
+  font-size: 10.5px;
+  padding: 4px 9px;
+  font-weight: 500;
+}
 .perm-btn:disabled { opacity: .4; cursor: not-allowed; }
-.del-btn      { font-size: 10px; padding: 3px 7px; }
+.del-btn {
+  font-size: 10.5px;
+  padding: 4px 9px;
+  font-weight: 500;
+}
 
 /* ── 权限编辑模态框（Teleport to body）──────────────────── */
 .perm-overlay {
@@ -1201,7 +1253,7 @@ function docPercent(doc: KBDocument): number {
   width: 380px;
   max-width: 100%;
   box-shadow: var(--shadow-lg);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1212,23 +1264,31 @@ function docPercent(doc: KBDocument): number {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 12px;
 }
 .perm-title {
   font-size: 14px;
   font-weight: 700;
   color: var(--text);
   margin: 0;
+  border-left: 2.5px solid var(--primary);
+  padding-left: 8px;
 }
 .perm-close {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   font-size: 16px;
   font-weight: 700;
   color: var(--text-muted);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
 }
 .perm-close:hover { background: var(--bg); color: var(--text); }
 .perm-filename {
@@ -1238,19 +1298,23 @@ function docPercent(doc: KBDocument): number {
   overflow: hidden;
   text-overflow: ellipsis;
   margin: -6px 0 0;
+  font-family: 'IBM Plex Mono', monospace;
 }
 .perm-note {
   font-size: 11px;
   color: var(--text-muted);
   background: var(--bg);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: 7px 10px;
   margin: 0;
+  border-left: 2px solid var(--border);
 }
 .perm-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 /* ── 通用按钮基础（btn-icon 用于无边框小按钮） ─────────── */

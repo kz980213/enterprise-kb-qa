@@ -135,6 +135,17 @@ async function saveUser(u: AdminUser) {
       users.value[idx] = updated
       initDraft(updated)
     }
+    // 若修改的是当前登录用户，同步更新 auth store（顶栏密级徽章立即刷新）
+    if (updated.id === auth.user?.id) {
+      auth.setUser({
+        id: updated.id,
+        username: updated.username,
+        permission_tags: updated.permission_tags,
+        clearance_level: updated.clearance_level,
+        is_active: updated.is_active,
+        is_admin: updated.is_admin,
+      })
+    }
     successMsg.value = `${u.username} 的权限已更新`
     setTimeout(() => { successMsg.value = '' }, 3000)
   } catch (e: unknown) {
