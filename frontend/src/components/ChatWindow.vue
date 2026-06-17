@@ -149,11 +149,13 @@ async function handleFileSelect(e: Event) {
 }
 
 function handlePaste(e: ClipboardEvent) {
+  if (sessions.selectedModel !== 'claude') return
   const files = e.clipboardData?.files
   if (files && files.length) addImageFiles(files)
 }
 
 function handleDragover(e: DragEvent) {
+  if (sessions.selectedModel !== 'claude') return
   e.preventDefault()
   isDragging.value = true
 }
@@ -165,6 +167,7 @@ function handleDragleave() {
 async function handleDrop(e: DragEvent) {
   e.preventDefault()
   isDragging.value = false
+  if (sessions.selectedModel !== 'claude') return
   const files = e.dataTransfer?.files
   if (files) await addImageFiles(files)
 }
