@@ -61,7 +61,10 @@ _deepseek_client: openai.AsyncOpenAI | None = None
 def get_claude_client() -> anthropic.AsyncAnthropic:
     global _claude_client
     if _claude_client is None:
-        _claude_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        kwargs: dict = {"api_key": settings.anthropic_api_key}
+        if settings.anthropic_api_base:
+            kwargs["base_url"] = settings.anthropic_api_base
+        _claude_client = anthropic.AsyncAnthropic(**kwargs)
     return _claude_client
 
 

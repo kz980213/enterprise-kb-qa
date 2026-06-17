@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # ── Anthropic / Claude ────────────────────────────────────
     anthropic_api_key: str = ""          # ANTHROPIC_API_KEY 环境变量
+    anthropic_api_base: str = ""         # 留空则使用官方地址；填代理地址如 https://api.apiyi.com
     claude_model: str = "claude-sonnet-4-6"
 
     # ── JWT 鉴权 ──────────────────────────────────────────────
