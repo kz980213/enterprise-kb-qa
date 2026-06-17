@@ -316,10 +316,9 @@ function handleKeydown(e: KeyboardEvent) {
 /* ── 消息气泡 ── */
 .message {
   display: flex;
-  max-width: 760px;
-  margin: 0 auto;
   width: 100%;
-  padding: 0 24px;
+  padding: 0 20px;
+  box-sizing: border-box;
 }
 .message.user { justify-content: flex-end; }
 .message.assistant { justify-content: flex-start; }
@@ -428,9 +427,7 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 .input-bar {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 12px 24px;
+  padding: 12px 20px;
   display: flex;
   gap: 10px;
   align-items: flex-end;

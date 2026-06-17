@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useMetaStore } from '@/stores/meta'
@@ -24,6 +24,10 @@ const sidebarCollapsed = ref(false)
 
 // 文档管理面板开关（默认收起）
 const docPanelOpen = ref(false)
+
+// 设置弹窗开关
+const settingsOpen = ref(false)
+watch(sidebarCollapsed, () => { settingsOpen.value = false })
 
 // 用户名首字母头像
 const userInitial = computed(() =>
@@ -90,29 +94,17 @@ function handleLogout() {
         <SessionSidebar />
       </div>
 
-      <!-- 底部用户信息 -->
+      <!-- 底部设置入口 -->
       <div class="sidebar-footer">
-        <div class="user-info">
-          <div class="user-avatar">{{ userInitial }}</div>
-          <div class="user-detail">
-            <span class="user-name">{{ auth.user?.username }}</span>
-            <span class="user-clearance">{{ clearanceLabel(auth.user?.clearance_level ?? 0) }}</span>
-          </div>
-          <div class="user-actions">
-            <router-link
-              v-if="auth.isAdmin"
-              :to="{ name: 'admin' }"
-              class="action-icon"
-              title="用户管理"
-            >⚙</router-link>
-            <router-link
-              :to="{ name: 'memories' }"
-              class="action-icon"
-              title="记忆管理"
-            >◎</router-link>
-            <button class="action-icon" title="退出登录" @click="handleLogout">⏻</button>
-          </div>
-        </div>
+        <button
+          class="settings-trigger"
+          :class="{ active: settingsOpen }"
+          @click="settingsOpen = !settingsOpen"
+        >
+          <div class="st-avatar">{{ userInitial }}</div>
+          <span class="st-label">设置</span>
+          <span class="st-chevron" :class="{ open: settingsOpen }">⌃</span>
+        </button>
       </div>
     </aside>
 
@@ -164,6 +156,49 @@ function handleLogout() {
       </div>
       <div v-if="docPanelOpen" class="overlay-backdrop" @click="docPanelOpen = false"></div>
     </template>
+
+    <!-- 设置弹窗 -->
+    <Transition name="popup">
+      <div v-if="settingsOpen" class="settings-popup">
+        <!-- 个人信息 -->
+        <div class="sp-user">
+          <div class="sp-avatar">{{ userInitial }}</div>
+          <div class="sp-user-info">
+            <span class="sp-username">{{ auth.user?.username }}</span>
+            <span
+              class="sp-clearance"
+              :class="`cl-${clearanceLabel(auth.user?.clearance_level ?? 0)}`"
+            >{{ clearanceLabel(auth.user?.clearance_level ?? 0) }}</span>
+          </div>
+        </div>
+
+        <div class="sp-divider"></div>
+
+        <!-- 功能入口 -->
+        <router-link
+          :to="{ name: 'memories' }"
+          class="sp-item"
+          @click="settingsOpen = false"
+        >
+          <span class="sp-icon">◎</span>记忆管理
+        </router-link>
+        <router-link
+          v-if="auth.isAdmin"
+          :to="{ name: 'admin' }"
+          class="sp-item"
+          @click="settingsOpen = false"
+        >
+          <span class="sp-icon">⚙</span>用户管理
+        </router-link>
+
+        <div class="sp-divider"></div>
+
+        <button class="sp-item sp-danger" @click="handleLogout">
+          <span class="sp-icon">⏻</span>退出登录
+        </button>
+      </div>
+    </Transition>
+    <div v-if="settingsOpen" class="settings-backdrop" @click="settingsOpen = false"></div>
 
   </div>
 </template>
@@ -260,74 +295,157 @@ function handleLogout() {
   min-height: 0;
 }
 
-/* ── 侧边栏底部用户信息 ── */
+/* ── 侧边栏底部设置触发器 ── */
 .sidebar-footer {
   border-top: 1px solid var(--border-subtle);
-  padding: 10px 12px;
+  padding: 8px;
   flex-shrink: 0;
   overflow: hidden;
-  white-space: nowrap;
 }
-.user-info {
+.settings-trigger {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+  white-space: nowrap;
+  overflow: hidden;
 }
-.user-avatar {
-  width: 30px;
-  height: 30px;
+.settings-trigger:hover,
+.settings-trigger.active { background: var(--surface); }
+.st-avatar {
+  width: 28px;
+  height: 28px;
   background: var(--primary);
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #fff;
   flex-shrink: 0;
 }
-.user-detail {
+.st-label {
   flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  overflow: hidden;
-}
-.user-name {
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: left;
 }
-.user-clearance {
-  font-size: 11px;
+.st-chevron {
+  font-size: 12px;
   color: var(--text-muted);
-  font-family: 'IBM Plex Mono', monospace;
+  display: inline-block;
+  transform: rotate(180deg);
+  transition: transform var(--transition);
 }
-.user-actions {
+.st-chevron.open { transform: rotate(0deg); }
+
+/* ── 设置弹窗 ── */
+.settings-popup {
+  position: fixed;
+  left: 12px;
+  bottom: 60px;
+  width: 236px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  overflow: hidden;
+  padding: 4px 0;
+}
+.sp-user {
   display: flex;
-  gap: 2px;
-  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 10px;
 }
-.action-icon {
-  width: 26px;
-  height: 26px;
+.sp-avatar {
+  width: 36px;
+  height: 36px;
+  background: var(--primary);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.sp-user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sp-username {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.sp-clearance {
+  font-size: 10.5px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  padding: 1px 6px;
   border-radius: var(--radius-sm);
+  border: 1px solid currentColor;
+  width: fit-content;
+}
+.sp-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+.sp-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--text);
+  text-decoration: none;
   background: transparent;
   border: none;
-  color: var(--text-muted);
-  font-size: 13px;
+  width: 100%;
   cursor: pointer;
-  text-decoration: none;
-  transition: background var(--transition), color var(--transition);
+  transition: background var(--transition);
+  font-family: inherit;
+  text-align: left;
 }
-.action-icon:hover { background: var(--surface); color: var(--text); }
+.sp-item:hover { background: var(--bg); }
+.sp-icon {
+  font-size: 14px;
+  color: var(--text-muted);
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.sp-danger { color: var(--danger); }
+.sp-danger .sp-icon { color: var(--danger); }
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+}
+
+/* 弹窗出入动画 */
+.popup-enter-active,
+.popup-leave-active {
+  transition: opacity var(--transition), transform var(--transition);
+}
+.popup-enter-from,
+.popup-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
 
 /* ── 侧边栏收缩按钮（绝对定位，浮于边界）── */
 .sidebar-toggle {
@@ -353,6 +471,8 @@ function handleLogout() {
 }
 .sidebar-toggle.collapsed { left: 0; }
 .sidebar-toggle:hover { background: var(--bg-sidebar); color: var(--text); }
+/* 防止全局 button:active { transform: translateY(1px) } 覆盖绝对定位的垂直居中 */
+.sidebar-toggle:active:not(:disabled) { transform: translateY(-50%); }
 
 /* ── 主内容区 ── */
 .main {
