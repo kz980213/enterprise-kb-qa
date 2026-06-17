@@ -593,19 +593,18 @@ function docPercent(doc: KBDocument): number {
         </label>
         <div v-if="meta.loading" class="inline-tip">加载词表…</div>
         <div v-else-if="meta.aclTags.length" class="tag-checkboxes">
-          <label
+          <div
             v-for="tag in meta.aclTags"
             :key="tag"
             class="tag-option"
             :class="{ selected: selectedTags.includes(tag) }"
+            @click="toggleTag(tag)"
           >
-            <input
-              type="checkbox"
-              :checked="selectedTags.includes(tag)"
-              @change="toggleTag(tag)"
-            />
+            <span class="tag-check">
+              <svg v-if="selectedTags.includes(tag)" width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 5 4 7.5 8.5 2.5"/></svg>
+            </span>
             {{ tag }}
-          </label>
+          </div>
         </div>
         <p v-else class="inline-err">词表加载失败，请刷新页面</p>
         <p v-if="!meta.loading && selectedTags.length === 0" class="field-hint warn">
@@ -801,19 +800,18 @@ function docPercent(doc: KBDocument): number {
           <div class="field">
             <label>权限标签 <span class="required">*</span></label>
             <div class="tag-checkboxes">
-              <label
+              <div
                 v-for="tag in meta.aclTags"
                 :key="tag"
                 class="tag-option"
                 :class="{ selected: editTags.includes(tag) }"
+                @click="toggleEditTag(tag)"
               >
-                <input
-                  type="checkbox"
-                  :checked="editTags.includes(tag)"
-                  @change="toggleEditTag(tag)"
-                />
+                <span class="tag-check">
+                  <svg v-if="editTags.includes(tag)" width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 5 4 7.5 8.5 2.5"/></svg>
+                </span>
                 {{ tag }}
-              </label>
+              </div>
             </div>
             <p v-if="editTags.length === 0" class="field-hint warn">至少选择一个标签</p>
           </div>
@@ -996,7 +994,7 @@ function docPercent(doc: KBDocument): number {
 .tag-option {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 11px;
   color: var(--text);
   background: var(--bg);
@@ -1004,15 +1002,33 @@ function docPercent(doc: KBDocument): number {
   border-radius: 4px;
   padding: 4px 9px;
   cursor: pointer;
+  user-select: none;
   transition: background .12s, border-color .12s, color .12s;
 }
-.tag-option input { width: auto; margin: 0; cursor: pointer; }
 .tag-option:hover:not(.selected) { border-color: var(--primary); }
 .tag-option.selected {
   background: var(--primary-light, #eff6ff);
   border-color: var(--primary);
   color: var(--primary);
   font-weight: 600;
+}
+.tag-check {
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: .5;
+  color: var(--border);
+}
+.tag-option.selected .tag-check {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  opacity: 1;
 }
 
 /* ── 上传按钮 ────────────────────────────────────────────── */

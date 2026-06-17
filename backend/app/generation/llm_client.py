@@ -1,25 +1,19 @@
 """
-Claude 流式问答客户端（Anthropic SDK）
+双模型流式问答客户端：Anthropic Claude + DeepSeek（OpenAI 兼容协议）
 
-SSE 事件流结构（前端按 event type 区分处理）：
+SSE 事件流结构：
+  event: token    data: {"text": "..."}
+  event: citation data: [{...}]
+  event: done     data: {"finish_reason": "stop" | "no_relevant_content"}
+  event: error    data: {"message": "..."}
 
-  event: token         ← 正文 token，边生成边推送
-  data: {"text": "今年营收..."}
+短路逻辑：
+  1. ranked_chunks 为空 → 直接短路
+  2. 最高 rerank_score < rerank_threshold → 短路
 
-  ...（若干 token 事件）...
-
-  event: citation      ← 结构化引用，全部解析完成后一次性发出（末尾）
-  data: [{"marker":"[1]","chunk_id":"...","source":"财务报告.pdf","page_number":12,...}]
-
-  event: done          ← 流结束信号
-  data: {"finish_reason": "stop" | "no_relevant_content"}
-
-  event: error         ← 异常（仅在出错时出现，替代 done）
-  data: {"message": "..."}
-
-短路逻辑（兜底垃圾过滤，不做语义判断）：
-  1. ranked_chunks 为空 → 直接短路。
-  2. 最高 rerank_score < rerank_threshold（默认 0.001）→ 短路。
+DeepSeek 注意事项：
+  · 不支持图片多模态，images 参数会被自动忽略（仅保留文本）
+  · 消息格式为 OpenAI 兼容协议（system 作为首条消息）
 """
 
 import json
@@ -28,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import anthropic
+import openai
 import structlog
 
 from app.config import settings
@@ -56,18 +51,33 @@ class SSEEvent:
 
 
 # ──────────────────────────────────────────────────────────────
-# Anthropic 客户端单例
+# 客户端单例
 # ──────────────────────────────────────────────────────────────
 
-_llm_client: anthropic.AsyncAnthropic | None = None
+_claude_client: anthropic.AsyncAnthropic | None = None
+_deepseek_client: openai.AsyncOpenAI | None = None
 
 
+def get_claude_client() -> anthropic.AsyncAnthropic:
+    global _claude_client
+    if _claude_client is None:
+        _claude_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return _claude_client
+
+
+def get_deepseek_client() -> openai.AsyncOpenAI:
+    global _deepseek_client
+    if _deepseek_client is None:
+        _deepseek_client = openai.AsyncOpenAI(
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_api_base,
+        )
+    return _deepseek_client
+
+
+# 向后兼容（condense.py 等调用者）
 def get_llm_client() -> anthropic.AsyncAnthropic:
-    """返回模块级 AsyncAnthropic 单例。"""
-    global _llm_client
-    if _llm_client is None:
-        _llm_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    return _llm_client
+    return get_claude_client()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -95,6 +105,24 @@ def _no_content_stream() -> list[SSEEvent]:
     ]
 
 
+def _anthropic_to_openai_messages(system_str: str, anthropic_messages: list[dict]) -> list[dict]:
+    """将 Anthropic 格式消息转为 OpenAI/DeepSeek 格式。图片 block 被丢弃（DeepSeek 不支持多模态）。"""
+    result: list[dict] = [{"role": "system", "content": system_str}]
+    for msg in anthropic_messages:
+        content = msg["content"]
+        if isinstance(content, list):
+            # 提取文本 block，忽略图片 block
+            text = " ".join(
+                block["text"]
+                for block in content
+                if block.get("type") == "text"
+            )
+            result.append({"role": msg["role"], "content": text})
+        else:
+            result.append({"role": msg["role"], "content": content})
+    return result
+
+
 # ──────────────────────────────────────────────────────────────
 # 主流函数
 # ──────────────────────────────────────────────────────────────
@@ -106,6 +134,7 @@ async def stream_answer(
     history: list[dict[str, str]] | None = None,
     memories: list[str] | None = None,
     images: list[str] | None = None,
+    model: str = "claude",
     rerank_threshold: float | None = None,
 ) -> AsyncGenerator[SSEEvent, None]:
     """
@@ -116,7 +145,8 @@ async def stream_answer(
         ranked_chunks:    精排后候选列表（已按 rerank_score 降序）
         history:          M2 对话历史
         memories:         M3 长期记忆
-        images:           base64 编码图片列表（多模态）
+        images:           base64 编码图片列表（多模态，DeepSeek 模式下忽略）
+        model:            "claude" 或 "deepseek"
         rerank_threshold: 兜底过滤阈值（None 时读 settings）
     """
     threshold = rerank_threshold if rerank_threshold is not None else settings.rerank_threshold
@@ -141,35 +171,57 @@ async def stream_answer(
 
     # ── 构建 Prompt ─────────────────────────────────────────────
     context_items = _ranked_to_context_items(ranked_chunks)
-    system_str, messages = build_messages(
+    system_str, anthropic_messages = build_messages(
         query=query,
         context_items=context_items,
         history=history or None,
         memories=memories or None,
-        images=images or None,
+        images=images or None if model == "claude" else None,  # DeepSeek 不传图片
     )
 
-    # ── 流式调用 Claude ─────────────────────────────────────────
-    client = get_llm_client()
     full_text = ""
 
-    try:
-        async with client.messages.stream(
-            model=settings.claude_model,
-            max_tokens=settings.llm_max_tokens,
-            temperature=settings.llm_temperature,
-            system=system_str,
-            messages=messages,  # type: ignore[arg-type]
-        ) as stream:
-            async for text in stream.text_stream:
+    # ── Claude 流式生成 ─────────────────────────────────────────
+    if model == "claude":
+        client = get_claude_client()
+        try:
+            async with client.messages.stream(
+                model=settings.claude_model,
+                max_tokens=settings.llm_max_tokens,
+                temperature=settings.llm_temperature,
+                system=system_str,
+                messages=anthropic_messages,  # type: ignore[arg-type]
+            ) as stream:
+                async for text in stream.text_stream:
+                    if text:
+                        full_text += text
+                        yield SSEEvent(type="token", data={"text": text})
+        except Exception as exc:
+            logger.exception("Claude API 调用失败", error=str(exc))
+            yield SSEEvent(type="error", data={"message": f"生成失败：{exc}"})
+            return
+
+    # ── DeepSeek 流式生成 ────────────────────────────────────────
+    else:
+        openai_messages = _anthropic_to_openai_messages(system_str, anthropic_messages)
+        ds_client = get_deepseek_client()
+        try:
+            stream = await ds_client.chat.completions.create(
+                model=settings.deepseek_model,
+                messages=openai_messages,  # type: ignore[arg-type]
+                max_tokens=settings.llm_max_tokens,
+                temperature=settings.llm_temperature,
+                stream=True,
+            )
+            async for chunk in stream:
+                text = chunk.choices[0].delta.content or ""
                 if text:
                     full_text += text
                     yield SSEEvent(type="token", data={"text": text})
-
-    except Exception as exc:
-        logger.exception("Claude API 调用失败", error=str(exc))
-        yield SSEEvent(type="error", data={"message": f"生成失败：{exc}"})
-        return
+        except Exception as exc:
+            logger.exception("DeepSeek API 调用失败", error=str(exc))
+            yield SSEEvent(type="error", data={"message": f"生成失败：{exc}"})
+            return
 
     # ── 引用提取 ────────────────────────────────────────────────
     citations: list[Citation] = extract_citations(full_text, ranked_chunks)
@@ -180,5 +232,5 @@ async def stream_answer(
         tokens=len(full_text),
         citations=len(citations),
         best_rerank=round(best_score, 4),
-        model=settings.claude_model,
+        model=model,
     )

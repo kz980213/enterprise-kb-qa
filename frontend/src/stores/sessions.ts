@@ -25,6 +25,15 @@ export const useSessionsStore = defineStore('sessions', () => {
   const currentId   = ref<string | null>(null)
   const listLoading = ref(false)
 
+  // ── 模型选择（持久化到 localStorage） ──────────────────────────
+  const selectedModel = ref<'claude' | 'deepseek'>(
+    (localStorage.getItem('kb_model') as 'claude' | 'deepseek') ?? 'claude',
+  )
+  function setModel(m: 'claude' | 'deepseek'): void {
+    selectedModel.value = m
+    localStorage.setItem('kb_model', m)
+  }
+
   // ── 流式状态（按 sessionKey 隔离，reactive Record → Vue 自动追踪） ──
   const streamContent   = reactive<Record<string, string>>({})
   const streamCitations = reactive<Record<string, Citation[]>>({})
@@ -256,6 +265,7 @@ export const useSessionsStore = defineStore('sessions', () => {
         },
         abortCtrl.signal,
         images,
+        selectedModel.value,
       )
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') {
@@ -351,6 +361,7 @@ export const useSessionsStore = defineStore('sessions', () => {
   return {
     list, currentId, listLoading,
     messages, isStreaming,
+    selectedModel, setModel,
     fetchList, selectSession, newSession, attachNewSession, rename, remove,
     sendMessage, abortCurrentStream,
     reset,

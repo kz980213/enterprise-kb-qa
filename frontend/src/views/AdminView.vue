@@ -241,20 +241,19 @@ function formatDate(iso: string): string {
               <!-- 权限标签多选 -->
               <td class="td-tags">
                 <div v-if="drafts[u.id]" class="tag-checkboxes">
-                  <label
+                  <div
                     v-for="tag in meta.aclTags"
                     :key="tag"
                     class="tag-option"
                     :class="{ selected: drafts[u.id].tags.includes(tag) }"
                     :title="tag"
+                    @click="toggleDraftTag(u.id, tag)"
                   >
-                    <input
-                      type="checkbox"
-                      :checked="drafts[u.id].tags.includes(tag)"
-                      @change="toggleDraftTag(u.id, tag)"
-                    />
+                    <span class="tag-check">
+                      <svg v-if="drafts[u.id].tags.includes(tag)" width="8" height="8" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1.5 5 4 7.5 8.5 2.5"/></svg>
+                    </span>
                     {{ tag }}
-                  </label>
+                  </div>
                 </div>
                 <p v-if="drafts[u.id]?.tags.length === 0" class="required-hint">至少选一个</p>
               </td>
@@ -391,16 +390,28 @@ function formatDate(iso: string): string {
 .td-tags { min-width: 260px; }
 .tag-checkboxes { display: flex; flex-wrap: wrap; gap: 4px; }
 .tag-option {
-  display: flex; align-items: center; gap: 3px;
+  display: flex; align-items: center; gap: 4px;
   font-size: 10px; padding: 2px 7px; border-radius: 4px;
   background: var(--bg); border: 1px solid var(--border);
-  cursor: pointer; transition: background .1s, border-color .1s;
+  cursor: pointer; user-select: none;
+  transition: background .1s, border-color .1s;
   white-space: nowrap;
 }
-.tag-option input { width: auto; margin: 0; cursor: pointer; }
+.tag-option:hover:not(.selected) { border-color: var(--primary); }
 .tag-option.selected {
   background: var(--primary-light); border-color: var(--primary);
   color: var(--primary); font-weight: 600;
+}
+.tag-check {
+  width: 11px; height: 11px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; opacity: .4; color: var(--border);
+}
+.tag-option.selected .tag-check {
+  background: var(--primary); border-color: var(--primary);
+  color: #fff; opacity: 1;
 }
 .required-hint { font-size: 10px; color: var(--danger); margin: 2px 0 0; }
 

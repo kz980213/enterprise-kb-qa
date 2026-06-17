@@ -122,6 +122,17 @@ function handleLogout() {
       <header class="main-header">
         <span class="session-title">{{ currentSessionTitle }}</span>
         <div class="header-actions">
+          <!-- 模型切换 -->
+          <div class="model-toggle">
+            <button
+              :class="['model-btn', { active: sessions.selectedModel === 'claude' }]"
+              @click="sessions.setModel('claude')"
+            >Claude</button>
+            <button
+              :class="['model-btn', { active: sessions.selectedModel === 'deepseek' }]"
+              @click="sessions.setModel('deepseek')"
+            >DeepSeek</button>
+          </div>
           <!-- 密级徽章 -->
           <span
             v-if="auth.user"
@@ -524,6 +535,36 @@ function handleLogout() {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* 模型切换按钮组 */
+.model-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px;
+  gap: 1px;
+}
+.model-btn {
+  font-size: 11px;
+  padding: 3px 11px;
+  border-radius: 18px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+  font-family: 'IBM Plex Mono', monospace;
+  letter-spacing: .2px;
+}
+.model-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
 }
 
 /* 密级徽章 */

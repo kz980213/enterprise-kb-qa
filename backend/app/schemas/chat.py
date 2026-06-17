@@ -30,6 +30,10 @@ class ChatRequest(BaseModel):
         description="base64 编码图片（不含 data: URI 前缀），最多 5 张",
         max_length=5,
     )
+    model: Literal["claude", "deepseek"] = Field(
+        default="claude",
+        description="使用的 LLM 后端：claude 或 deepseek",
+    )
 
 
 # ──────────────────────────────────────────────────────────────
