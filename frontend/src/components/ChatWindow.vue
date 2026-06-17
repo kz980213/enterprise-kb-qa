@@ -5,7 +5,32 @@
  */
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { marked } from 'marked'
+import type { Tokens } from 'marked'
 import DOMPurify from 'dompurify'
+import hljs from 'highlight.js'
+import mermaid from 'mermaid'
+
+// ── 初始化 mermaid ────────────────────────────────────────────
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' })
+
+// ── 自定义 marked renderer（代码块高亮 + mermaid 占位）────────
+marked.use({
+  renderer: {
+    code(token: Tokens.Code) {
+      const { text, lang } = token
+      if (lang === 'mermaid') {
+        // HTML 转义后写入，mermaid.run 读 textContent 会自动解码
+        const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        return `<div class="mermaid-block"><div class="mermaid">${safe}</div></div>`
+      }
+      const highlighted = lang && hljs.getLanguage(lang)
+        ? hljs.highlight(text, { language: lang, ignoreIllegals: true }).value
+        : hljs.highlightAuto(text).value
+      const escapedLang = lang ? ` language-${lang}` : ''
+      return `<pre class="hljs-pre"><code class="hljs${escapedLang}">${highlighted}</code></pre>`
+    },
+  },
+})
 import { useAuthStore } from '@/stores/auth'
 import { useSessionsStore } from '@/stores/sessions'
 import { useQuickPhrasesStore } from '@/stores/quickPhrases'
@@ -57,6 +82,20 @@ watch(
     return msgs.length + (last?.content?.length ?? 0)
   },
   () => nextTick(scrollToBottom),
+)
+
+// ── 流式结束后渲染 Mermaid 图表 ──────────────────────────────
+watch(
+  () => sessions.messages.map(m => m.isStreaming),
+  async () => {
+    await nextTick()
+    const container = chatRef.value
+    if (!container) return
+    const pending = container.querySelectorAll<HTMLElement>('.mermaid:not([data-rendered])')
+    if (!pending.length) return
+    pending.forEach(el => el.setAttribute('data-rendered', 'true'))
+    try { await mermaid.run({ nodes: Array.from(pending) }) } catch { /* 语法错误时静默 */ }
+  },
 )
 
 // ── 图片处理 ──────────────────────────────────────────────────
@@ -475,20 +514,78 @@ function handleKeydown(e: KeyboardEvent) {
 .assistant-content :deep(h3) { margin: 12px 0 6px; font-weight: 700; }
 .assistant-content :deep(ul),
 .assistant-content :deep(ol) { margin: 6px 0 6px 18px; }
-.assistant-content :deep(code) {
+.assistant-content :deep(code:not(.hljs)) {
   background: var(--bg);
   border-radius: var(--radius-sm);
   padding: 1px 5px;
   font-family: 'IBM Plex Mono', 'Fira Code', monospace;
   font-size: 12.5px;
 }
-.assistant-content :deep(pre) {
+.assistant-content :deep(pre:not(.hljs-pre)) {
   background: var(--bg);
   border-radius: var(--radius-sm);
   padding: 10px 14px;
   overflow-x: auto;
   margin: 8px 0;
   border: 1px solid var(--border-subtle);
+}
+
+/* ── 语法高亮代码块 ─────────────────────────────────────────── */
+.assistant-content :deep(.hljs-pre) {
+  background: #1e293b;
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 8px 0;
+  border: 1px solid #334155;
+}
+.assistant-content :deep(.hljs-pre .hljs) {
+  background: transparent;
+  font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: #e2e8f0;
+  padding: 0;
+}
+
+/* ── 表格 ───────────────────────────────────────────────────── */
+.assistant-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.assistant-content :deep(thead) {
+  background: var(--primary);
+  color: #fff;
+}
+.assistant-content :deep(th),
+.assistant-content :deep(td) {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.5;
+}
+.assistant-content :deep(tbody tr:nth-child(even)) { background: var(--bg); }
+.assistant-content :deep(tbody tr:hover) { background: var(--primary-subtle); }
+
+/* ── Mermaid 流程图 ─────────────────────────────────────────── */
+.mermaid-block {
+  margin: 12px 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  overflow-x: auto;
+  text-align: center;
+}
+.mermaid-block :deep(svg) {
+  max-width: 100%;
+  height: auto;
 }
 .assistant-content :deep(blockquote) {
   border-left: 3px solid var(--primary);
