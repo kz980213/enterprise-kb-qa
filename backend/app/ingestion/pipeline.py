@@ -398,6 +398,12 @@ async def ingest_document_bg(
 
     except Exception as exc:
         # ── 失败：用新 session 标记 failed（主 session 可能已 rollback）
+        #
+        # content_hash 置 NULL：释放该内容哈希的唯一占位。
+        # 不释放的话，用户用完全相同的文件字节重新上传（"重新上传"按钮的常见场景）
+        # 会在 documents.py 的去重检查里撞见这条失败记录本身，返回 409，
+        # 导致重试永远失败。content_hash 列本身允许 NULL（历史记录兼容），
+        # Postgres UNIQUE 约束允许多行 NULL 共存，这里复用同一语义。
         log.error("文档入库失败", error=str(exc))
         try:
             async with session_factory() as err_db:
@@ -408,6 +414,7 @@ async def ingest_document_bg(
                         status="failed",
                         stage=None,
                         error_message=str(exc)[:1000],
+                        content_hash=None,
                     )
                 )
                 await err_db.commit()

@@ -105,7 +105,9 @@ class Document(Base):
         nullable=True,
     )
     # 文件内容 SHA-256 哈希（64 位十六进制字符串）
-    # 用于上传去重：同一内容不允许重复入库（防密级漂移），NULL = 迁移前已有记录
+    # 用于上传去重：同一内容不允许重复入库（防密级漂移）。
+    # NULL = 迁移前已有记录，或该文档入库失败（pipeline.py 失败时主动释放哈希占位，
+    # 使同一文件字节可以重新上传而不撞 409）
     content_hash: Mapped[str | None] = mapped_column(
         String(64), nullable=True, unique=True
     )
